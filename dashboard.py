@@ -195,14 +195,14 @@ def render_main_page():
             mode = st.radio("설정 방식", ["전체 동일", "카테고리별"], horizontal=True, key="pub_mode")
             
             if mode == "전체 동일":
-                total_count = st.number_input("전체 카테고리 발행 개수", min_value=1, max_value=100, value=keywords.get("연애", 15), key="total_pub")
+                total_count = st.number_input("전체 카테고리 발행 개수", min_value=0, max_value=100, value=keywords.get("연애", 15), key="total_pub")
                 for cat in categories:
                     keywords[cat] = total_count
             else:
                 cols = st.columns(3)
                 for idx, cat in enumerate(categories):
                     with cols[idx]:
-                        keywords[cat] = st.number_input(f"{cat}", min_value=1, max_value=100, value=keywords.get(cat, 15), key=f"pub_{cat}")
+                        keywords[cat] = st.number_input(f"{cat}", min_value=0, max_value=100, value=keywords.get(cat, 15), key=f"pub_{cat}")
             
             total_sum = sum(keywords.values())
             st.caption(f"총 {total_sum}개 뉴스 수집 예정 (연애 {keywords['연애']} + 경제 {keywords['경제']} + 스포츠 {keywords['스포츠']})")
