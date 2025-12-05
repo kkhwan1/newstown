@@ -52,10 +52,49 @@ def apply_config(config):
     """naver_to_sheet 모듈의 전역 변수 오버라이드"""
     import naver_to_sheet
 
-    # 키워드 설정
-    if 'keywords' in config:
+    # 카테고리별 수집 개수
+    category_counts = config.get('keywords', {})
+    
+    # category_keywords에서 실제 검색 키워드 생성
+    if 'category_keywords' in config and category_counts:
+        search_keywords = {}
+        keyword_map = {}
+        
+        for category, count in category_counts.items():
+            cat_data = config['category_keywords'].get(category, {})
+            core_kws = cat_data.get('core', [])
+            general_kws = cat_data.get('general', [])
+            
+            # Core 키워드를 실제 검색에 사용
+            if core_kws:
+                # 각 core 키워드에 수집 개수 분배
+                per_keyword_count = max(1, count // len(core_kws))
+                for kw in core_kws:
+                    search_keywords[kw] = per_keyword_count
+                    keyword_map[kw] = category
+            else:
+                # core 키워드가 없으면 카테고리명 자체를 사용
+                search_keywords[category] = count
+                keyword_map[category] = category
+            
+            # General 키워드도 카테고리 매핑에 추가 (분류용)
+            for kw in general_kws:
+                keyword_map[kw] = category
+        
+        if search_keywords:
+            naver_to_sheet.KEYWORDS = search_keywords
+            print(f"[CONFIG] 검색 키워드: {len(search_keywords)}개")
+            for kw, cnt in search_keywords.items():
+                print(f"   - {kw}: {cnt}개")
+        
+        if keyword_map:
+            naver_to_sheet.KEYWORD_CATEGORY_MAP = keyword_map
+            print(f"[CONFIG] 카테고리 매핑: {len(keyword_map)}개")
+    
+    elif 'keywords' in config:
+        # category_keywords가 없는 경우 기존 방식 사용
         naver_to_sheet.KEYWORDS = config['keywords']
-        print(f"[CONFIG] 키워드 설정: {config['keywords']}")
+        print(f"[CONFIG] 키워드 설정 (기본): {config['keywords']}")
 
     # 출력 개수 설정
     if 'display_count' in config:
@@ -72,18 +111,6 @@ def apply_config(config):
         naver_to_sheet.NAVER_CLIENT_ID = config['naver_client_id']
     if 'naver_client_secret' in config:
         naver_to_sheet.NAVER_CLIENT_SECRET = config['naver_client_secret']
-
-    # category_keywords로 KEYWORD_CATEGORY_MAP 동적 생성
-    if 'category_keywords' in config:
-        keyword_map = {}
-        for category, data in config['category_keywords'].items():
-            for kw in data.get('core', []):
-                keyword_map[kw] = category
-            for kw in data.get('general', []):
-                keyword_map[kw] = category
-        if keyword_map:
-            naver_to_sheet.KEYWORD_CATEGORY_MAP = keyword_map
-            print(f"[LIST] 카테고리 매핑: {len(keyword_map)}개 키워드")
 
 def main():
     """메인 실행 함수"""

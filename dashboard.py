@@ -606,108 +606,99 @@ def render_news_collection_tab():
                             cm.set_section("category_keywords", category_keywords)
                         st.rerun()
 
-        # 카테고리별 세부 키워드 수정
+        # 카테고리별 세부 키워드 수정 (실시간 텍스트 영역 방식)
         st.markdown("---")
         st.markdown('<div class="section-subtitle">카테고리별 세부 키워드 수정</div>', unsafe_allow_html=True)
-        st.caption("각 카테고리의 core(핵심) 및 general(일반) 키워드를 개별적으로 수정할 수 있습니다.")
+        st.caption("각 카테고리의 키워드를 쉼표(,)로 구분하여 실시간으로 수정할 수 있습니다. 수정 후 '저장' 버튼을 클릭하세요.")
 
         category_keywords = get_category_keywords(cm)
 
         for category in keywords.keys():
-            with st.expander(f"{category} 세부 키워드", expanded=False):
+            with st.expander(f"{category} 세부 키워드 편집", expanded=False):
                 cat_data = category_keywords.get(category, {"core": [], "general": []})
                 core_kws = list(cat_data.get("core", []))
                 general_kws = list(cat_data.get("general", []))
 
-                # Core 키워드 섹션
-                st.markdown("**Core 키워드** (핵심 검색어)")
-                if core_kws:
-                    # 키워드 태그로 표시
-                    core_tags = " ".join([f'<span class="keyword-pill">{kw}</span>' for kw in core_kws])
-                    st.markdown(f'<div style="margin-bottom: 10px;">{core_tags}</div>', unsafe_allow_html=True)
+                # Core 키워드 텍스트 영역
+                st.markdown("**Core 키워드** (핵심 검색어 - 뉴스 검색에 직접 사용)")
+                core_text = st.text_area(
+                    "Core 키워드 (쉼표로 구분)",
+                    value=", ".join(core_kws),
+                    key=f"core_text_{category}",
+                    disabled=is_running,
+                    height=100,
+                    placeholder="예: 연애, 열애, 결혼, 이혼"
+                )
 
-                    # Core 키워드 삭제
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        core_to_delete = st.selectbox(
-                            "삭제할 Core 키워드",
-                            options=["선택하세요"] + core_kws,
-                            key=f"del_core_{category}",
-                            disabled=is_running
-                        )
-                    with col2:
-                        st.write("")
-                        if st.button("삭제", key=f"btn_del_core_{category}", disabled=is_running or core_to_delete == "선택하세요"):
-                            if core_to_delete != "선택하세요" and core_to_delete in core_kws:
-                                core_kws.remove(core_to_delete)
-                                cat_data["core"] = core_kws
-                                category_keywords[category] = cat_data
-                                cm.set_section("category_keywords", category_keywords)
-                                st.rerun()
-                else:
-                    st.info("Core 키워드가 없습니다.")
+                # General 키워드 텍스트 영역
+                st.markdown("**General 키워드** (일반 검색어 - 뉴스 분류에 사용)")
+                general_text = st.text_area(
+                    "General 키워드 (쉼표로 구분)",
+                    value=", ".join(general_kws),
+                    key=f"general_text_{category}",
+                    disabled=is_running,
+                    height=100,
+                    placeholder="예: 신랑, 웨딩, 커플링"
+                )
 
-                # Core 키워드 추가
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    new_core = st.text_input("새 Core 키워드", key=f"new_core_{category}", disabled=is_running, placeholder="예: 연애")
-                with col2:
-                    st.write("")
-                    if st.button("추가", key=f"btn_add_core_{category}", disabled=is_running or not new_core):
-                        if new_core and new_core.strip():
-                            new_kw = new_core.strip()
-                            if new_kw not in core_kws:
-                                core_kws.append(new_kw)
-                                cat_data["core"] = core_kws
-                                category_keywords[category] = cat_data
-                                cm.set_section("category_keywords", category_keywords)
-                                st.rerun()
+                # 저장 버튼
+                if st.button(f"{category} 키워드 저장", key=f"save_keywords_{category}", disabled=is_running, type="primary"):
+                    # 텍스트에서 키워드 파싱
+                    new_core = [kw.strip() for kw in core_text.split(",") if kw.strip()]
+                    new_general = [kw.strip() for kw in general_text.split(",") if kw.strip()]
+                    
+                    # 중복 제거
+                    new_core = list(dict.fromkeys(new_core))
+                    new_general = list(dict.fromkeys(new_general))
+                    
+                    # 저장
+                    cat_data["core"] = new_core
+                    cat_data["general"] = new_general
+                    category_keywords[category] = cat_data
+                    cm.set_section("category_keywords", category_keywords)
+                    st.success(f"{category} 키워드가 저장되었습니다! (Core: {len(new_core)}개, General: {len(new_general)}개)")
+                    st.rerun()
 
-                st.markdown("---")
+                # 현재 키워드 개수 표시
+                st.caption(f"현재: Core {len(core_kws)}개, General {len(general_kws)}개")
 
-                # General 키워드 섹션
-                st.markdown("**General 키워드** (일반 검색어)")
-                if general_kws:
-                    # 키워드 태그로 표시
-                    general_tags = " ".join([f'<span class="keyword-pill">{kw}</span>' for kw in general_kws])
-                    st.markdown(f'<div style="margin-bottom: 10px;">{general_tags}</div>', unsafe_allow_html=True)
-
-                    # General 키워드 삭제
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        general_to_delete = st.selectbox(
-                            "삭제할 General 키워드",
-                            options=["선택하세요"] + general_kws,
-                            key=f"del_general_{category}",
-                            disabled=is_running
-                        )
-                    with col2:
-                        st.write("")
-                        if st.button("삭제", key=f"btn_del_general_{category}", disabled=is_running or general_to_delete == "선택하세요"):
-                            if general_to_delete != "선택하세요" and general_to_delete in general_kws:
-                                general_kws.remove(general_to_delete)
-                                cat_data["general"] = general_kws
-                                category_keywords[category] = cat_data
-                                cm.set_section("category_keywords", category_keywords)
-                                st.rerun()
-                else:
-                    st.info("General 키워드가 없습니다.")
-
-                # General 키워드 추가
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    new_general = st.text_input("새 General 키워드", key=f"new_general_{category}", disabled=is_running, placeholder="예: 신랑")
-                with col2:
-                    st.write("")
-                    if st.button("추가", key=f"btn_add_general_{category}", disabled=is_running or not new_general):
-                        if new_general and new_general.strip():
-                            new_kw = new_general.strip()
-                            if new_kw not in general_kws:
-                                general_kws.append(new_kw)
-                                cat_data["general"] = general_kws
-                                category_keywords[category] = cat_data
-                                cm.set_section("category_keywords", category_keywords)
-                                st.rerun()
+        # 빠른 키워드 추가 (특정 키워드 입력 시 관련 키워드도 함께)
+        st.markdown("---")
+        st.markdown('<div class="section-subtitle">빠른 키워드 추가</div>', unsafe_allow_html=True)
+        st.caption("특정 키워드를 입력하면 해당 카테고리의 Core 키워드로 추가됩니다.")
+        
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            quick_keyword = st.text_input(
+                "추가할 키워드",
+                key="quick_keyword",
+                disabled=is_running,
+                placeholder="예: 손흥민"
+            )
+        with col2:
+            target_category = st.selectbox(
+                "대상 카테고리",
+                options=list(keywords.keys()),
+                key="target_category",
+                disabled=is_running
+            )
+        with col3:
+            st.write("")
+            if st.button("추가", key="quick_add", disabled=is_running or not quick_keyword, use_container_width=True):
+                if quick_keyword and quick_keyword.strip():
+                    new_kw = quick_keyword.strip()
+                    cat_data = category_keywords.get(target_category, {"core": [], "general": []})
+                    core_kws = list(cat_data.get("core", []))
+                    
+                    if new_kw not in core_kws:
+                        core_kws.append(new_kw)
+                        cat_data["core"] = core_kws
+                        category_keywords[target_category] = cat_data
+                        cm.set_section("category_keywords", category_keywords)
+                        st.success(f"'{new_kw}'가 {target_category} Core 키워드에 추가되었습니다!")
+                        st.rerun()
+                    else:
+                        st.warning(f"'{new_kw}'는 이미 {target_category}에 존재합니다.")
 
     # 제어
     st.markdown('<div class="section-subtitle">제어</div>', unsafe_allow_html=True)
