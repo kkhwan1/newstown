@@ -14,6 +14,8 @@ import re
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
+from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -1080,6 +1082,45 @@ def calculate_similarity(text1, text2):
             similarity = max(similarity, 0.8)
     
     return similarity
+
+def is_today_news(pub_date_str):
+    """발행일이 오늘인지 확인 (네이버 API pubDate 형식: 'Fri, 05 Dec 2025 10:30:00 +0900')"""
+    if not pub_date_str:
+        return True  # pubDate 없으면 포함
+    try:
+        pub_date = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %z')
+        today = datetime.now(timezone.utc).astimezone().date()
+        return pub_date.date() == today
+    except Exception:
+        return True  # 파싱 실패시 포함
+
+def get_db_titles():
+    """DB에서 모든 뉴스 제목 가져오기"""
+    try:
+        from utils.database import get_connection
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT title FROM news")
+        titles = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return titles
+    except Exception as e:
+        print(f"[WARN] DB 제목 로드 실패: {e}")
+        return []
+
+def is_duplicate_in_db(new_title, db_titles, threshold=0.75):
+    """DB 제목과 유사도 75% 이상이면 중복 판정. (중복여부, 유사도, 매칭제목) 반환"""
+    if not db_titles:
+        return (False, 0.0, None)
+    
+    new_normalized = normalize_text(new_title)
+    for title in db_titles:
+        existing_normalized = normalize_text(title)
+        ratio = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
+        if ratio >= threshold:
+            return (True, ratio, title)
+    return (False, 0.0, None)
 
 def load_existing_news(sheet):
     """시트의 기존 뉴스 데이터를 모두 로드하여 캐시에 저장"""
