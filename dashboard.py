@@ -154,16 +154,27 @@ def render_main_page():
 
     st.markdown("# 대시보드")
 
+    category_keywords = cm.get("category_keywords", default={})
+    news_config = cm.get("news_collection")
+    keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
+
     col1, col2, col3 = st.columns(3)
+    categories = ["연애", "경제", "스포츠"]
+    procs = [
+        (PROC_NEWS, "뉴스 수집", NEWS_SCRIPT),
+        (PROC_UPLOAD, "업로드 감시", UPLOAD_SCRIPT),
+        (PROC_DELETION, "완료행 삭제", DELETION_SCRIPT)
+    ]
     
-    for col, (proc, name, script) in zip(
-        [col1, col2, col3],
-        [(PROC_NEWS, "뉴스 수집", NEWS_SCRIPT), (PROC_UPLOAD, "업로드 감시", UPLOAD_SCRIPT), (PROC_DELETION, "완료행 삭제", DELETION_SCRIPT)]
-    ):
+    for col, (proc, name, script) in zip([col1, col2, col3], procs):
         status = pm.get_status(proc)
         is_run = status['running']
         with col:
             st.markdown(f'<div class="status-box"><b>{name}</b><br><span class="{"status-run" if is_run else "status-stop"}">{"● 실행중" if is_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
+            
+            if proc == PROC_NEWS and not is_run:
+                pub_count = st.number_input("발행 개수", min_value=1, max_value=100, value=keywords.get("연애", 15), key="pub_count", label_visibility="collapsed")
+            
             if is_run:
                 if st.button("중지", key=f"stop_{proc}", use_container_width=True):
                     pm.stop_process(proc)
@@ -171,6 +182,9 @@ def render_main_page():
             else:
                 if st.button("시작", key=f"start_{proc}", type="primary", use_container_width=True):
                     if proc == PROC_NEWS:
+                        for cat in categories:
+                            keywords[cat] = pub_count
+                        cm.set("news_collection", "keywords", keywords)
                         config = cm.get_news_config()
                     elif proc == PROC_UPLOAD:
                         config = cm.get_upload_config()
@@ -182,74 +196,37 @@ def render_main_page():
     st.markdown("---")
 
     with st.expander("키워드 설정", expanded=False):
-        news_config = cm.get("news_collection")
-        keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
-        category_keywords = cm.get("category_keywords", default={})
-
-        cols = st.columns(len(keywords))
-        for idx, (kw, cnt) in enumerate(keywords.items()):
-            with cols[idx]:
-                new_cnt = st.number_input(f"{kw}", min_value=1, max_value=100, value=cnt, key=f"cnt_{kw}")
-                if new_cnt != cnt:
-                    keywords[kw] = new_cnt
-                    cm.set("news_collection", "keywords", keywords)
-
-        selected_cat = st.selectbox("카테고리", list(keywords.keys()), key="cat_sel")
-        
-        if selected_cat:
-            cat_data = category_keywords.get(selected_cat, {"core": [], "general": []})
-            
-            st.caption("Core 키워드 (검색용)")
+        for cat in categories:
+            cat_data = category_keywords.get(cat, {"core": [], "general": []})
             core_kws = cat_data.get("core", [])
+            kw_count = len(core_kws)
+            
+            st.markdown(f"**{cat}** ({kw_count}개 키워드)")
+            
             if core_kws:
-                kw_html = " ".join([f'<span class="kw-tag">{kw}</span>' for kw in core_kws])
-                st.markdown(kw_html, unsafe_allow_html=True)
-                del_core = st.selectbox("Core 삭제", ["선택"] + core_kws, key="del_core")
-                if del_core != "선택" and st.button("삭제", key="btn_del_core"):
-                    core_kws.remove(del_core)
-                    cat_data["core"] = core_kws
-                    category_keywords[selected_cat] = cat_data
-                    cm.set_section("category_keywords", category_keywords)
-                    st.rerun()
+                cols = st.columns(min(len(core_kws), 6))
+                for idx, kw in enumerate(core_kws):
+                    with cols[idx % 6]:
+                        if st.button(f"× {kw}", key=f"del_{cat}_{kw}"):
+                            core_kws.remove(kw)
+                            cat_data["core"] = core_kws
+                            category_keywords[cat] = cat_data
+                            cm.set_section("category_keywords", category_keywords)
+                            st.rerun()
             
-            c1, c2 = st.columns([4, 1])
+            c1, c2 = st.columns([5, 1])
             with c1:
-                new_core = st.text_input("추가", key="new_core", placeholder="키워드")
+                new_kw = st.text_input("키워드 추가", key=f"add_{cat}", placeholder="새 키워드 입력", label_visibility="collapsed")
             with c2:
-                st.write("")
-                if st.button("+", key="add_core"):
-                    if new_core and new_core not in core_kws:
-                        core_kws.append(new_core)
+                if st.button("+", key=f"btn_{cat}"):
+                    if new_kw and new_kw not in core_kws:
+                        core_kws.append(new_kw)
                         cat_data["core"] = core_kws
-                        category_keywords[selected_cat] = cat_data
+                        category_keywords[cat] = cat_data
                         cm.set_section("category_keywords", category_keywords)
                         st.rerun()
-
-            st.caption("General 키워드 (분류용)")
-            general_kws = cat_data.get("general", [])
-            if general_kws:
-                kw_html = " ".join([f'<span class="kw-tag">{kw}</span>' for kw in general_kws])
-                st.markdown(kw_html, unsafe_allow_html=True)
-                del_gen = st.selectbox("General 삭제", ["선택"] + general_kws, key="del_gen")
-                if del_gen != "선택" and st.button("삭제", key="btn_del_gen"):
-                    general_kws.remove(del_gen)
-                    cat_data["general"] = general_kws
-                    category_keywords[selected_cat] = cat_data
-                    cm.set_section("category_keywords", category_keywords)
-                    st.rerun()
             
-            c1, c2 = st.columns([4, 1])
-            with c1:
-                new_gen = st.text_input("추가", key="new_gen", placeholder="키워드")
-            with c2:
-                st.write("")
-                if st.button("+", key="add_gen"):
-                    if new_gen and new_gen not in general_kws:
-                        general_kws.append(new_gen)
-                        cat_data["general"] = general_kws
-                        category_keywords[selected_cat] = cat_data
-                        cm.set_section("category_keywords", category_keywords)
-                        st.rerun()
+            st.markdown("---")
 
 
 def render_news_page():
