@@ -1,904 +1,386 @@
 # -*- coding: utf-8 -*-
 """
 뉴스 자동화 대시보드
-Streamlit 기반 GUI로 뉴스 수집, 업로드 감시, 완료행 삭제 기능을 통합 관리
+Streamlit 기반 GUI로 뉴스 수집, 업로드 감시, 프롬프트 관리 기능 통합
 """
 import streamlit as st
 import os
 import sys
 from pathlib import Path
 
-# 현재 디렉토리를 path에 추가
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
 from utils.process_manager import ProcessManager
 from utils.config_manager import ConfigManager
 
-def get_category_keywords(cm):
-    """config에서 카테고리 키워드 가져오기"""
-    return cm.get("category_keywords", default={})
-
-# 페이지 설정
 st.set_page_config(
-    page_title="뉴스 자동화 대시보드",
+    page_title="뉴스 자동화",
     page_icon="N",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# Apple 스타일 CSS
 st.markdown("""
 <style>
-    /* 전체 배경 및 기본 스타일 */
-    .main {
-        background-color: #ffffff;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    }
-
-    .stApp {
-        background-color: #ffffff;
-    }
-
-    /* 메인 헤더 */
-    .main-header {
-        font-size: 2rem;
-        font-weight: 600;
-        color: #1d1d1f;
-        letter-spacing: -0.02em;
-        padding: 0.5rem 0 1.5rem 0;
-    }
-
-    /* 상태 테이블 */
-    .status-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 1rem 0 2rem 0;
-        background: #ffffff;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    }
-
-    .status-table th {
-        background: #f5f5f7;
-        color: #1d1d1f;
-        font-weight: 500;
-        font-size: 0.85rem;
-        padding: 12px 16px;
-        text-align: left;
-        border-bottom: 1px solid #e5e5e5;
-    }
-
-    .status-table td {
-        padding: 14px 16px;
-        color: #1d1d1f;
-        font-size: 0.9rem;
-        border-bottom: 1px solid #f0f0f0;
-    }
-
-    .status-table tr:last-child td {
-        border-bottom: none;
-    }
-
-    .status-running {
-        color: #34c759;
-        font-weight: 500;
-    }
-
-    .status-stopped {
-        color: #ff3b30;
-        font-weight: 500;
-    }
-
-    /* 섹션 제목 */
-    .section-title {
-        font-size: 1.3rem;
-        font-weight: 600;
-        color: #1d1d1f;
-        margin: 1.5rem 0 1rem 0;
-        letter-spacing: -0.01em;
-    }
-
-    .section-subtitle {
-        font-size: 1rem;
-        font-weight: 500;
-        color: #1d1d1f;
-        margin: 1rem 0 0.5rem 0;
-    }
-
-    /* 키워드 테이블 */
-    .keyword-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 0.5rem 0;
-        background: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 8px;
-        overflow: hidden;
-    }
-
-    .keyword-table th {
-        background: #f5f5f7;
-        color: #1d1d1f;
-        font-weight: 500;
-        font-size: 0.8rem;
-        padding: 10px 14px;
-        text-align: left;
-    }
-
-    .keyword-table td {
-        padding: 10px 14px;
-        color: #1d1d1f;
-        font-size: 0.85rem;
-        border-top: 1px solid #f0f0f0;
-    }
-
-    /* 버튼 스타일 */
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: 500;
-        font-size: 0.9rem;
-        padding: 0.5rem 1.5rem;
-        transition: all 0.2s ease;
-    }
-
-    .stButton > button[kind="primary"] {
-        background-color: #007aff;
-        border: none;
-        color: white;
-    }
-
-    .stButton > button[kind="primary"]:hover {
-        background-color: #0056b3;
-    }
-
-    .stButton > button[kind="secondary"] {
-        background-color: #f5f5f7;
-        border: 1px solid #d1d1d6;
-        color: #1d1d1f;
-    }
-
-    /* 탭 스타일 */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0;
-        background: #f5f5f7;
-        border-radius: 8px;
-        padding: 4px;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        padding: 8px 20px;
-        font-weight: 500;
-        color: #1d1d1f;
-        border-radius: 6px;
-        font-size: 0.9rem;
-    }
-
-    .stTabs [aria-selected="true"] {
-        background: #ffffff;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    }
-
-    /* 입력 필드 */
-    .stNumberInput > div > div > input,
-    .stTextInput > div > div > input {
-        border: 1px solid #d1d1d6;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        color: #1d1d1f;
-    }
-
-    .stNumberInput > div > div > input:focus,
-    .stTextInput > div > div > input:focus {
-        border-color: #007aff;
-        box-shadow: 0 0 0 3px rgba(0,122,255,0.1);
-    }
-
-    /* 알림 박스 */
-    .info-box {
-        background: #f5f5f7;
-        border-radius: 8px;
-        padding: 12px 16px;
-        color: #1d1d1f;
-        font-size: 0.85rem;
-        margin: 0.5rem 0;
-    }
-
-    .success-box {
-        background: #f0fff4;
-        border: 1px solid #c6f6d5;
-        border-radius: 8px;
-        padding: 12px 16px;
-        color: #1d1d1f;
-        font-size: 0.85rem;
-        margin: 1rem 0;
-    }
-
-    /* Expander */
-    .streamlit-expanderHeader {
-        font-weight: 500;
-        font-size: 0.95rem;
-        color: #1d1d1f;
-        background: #f5f5f7;
-        border-radius: 8px;
-    }
-
-    /* 구분선 */
-    hr {
-        border: none;
-        border-top: 1px solid #e5e5e5;
-        margin: 1.5rem 0;
-    }
-
-    /* 키워드 개요 */
-    .keyword-overview {
-        background: #f5f5f7;
-        border-radius: 10px;
-        padding: 14px 18px;
-        margin: 0 0 1.5rem 0;
-    }
-
-    .keyword-label {
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #6e6e73;
-        margin-bottom: 10px;
-        display: block;
-    }
-
-    .keyword-categories {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
-
-    .keyword-category {
-        background: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 10px;
-        overflow: hidden;
-    }
-
-    .keyword-category-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 16px;
-        background: #ffffff;
-        cursor: pointer;
-        transition: background 0.2s;
-    }
-
-    .keyword-category-header:hover {
-        background: #fafafa;
-    }
-
-    .keyword-category-title {
-        font-size: 0.95rem;
-        font-weight: 600;
-        color: #1d1d1f;
-    }
-
-    .keyword-category-count {
-        font-size: 0.8rem;
-        font-weight: 500;
-        color: #007aff;
-        background: #e8f4fd;
-        padding: 4px 10px;
-        border-radius: 12px;
-    }
-
-    .keyword-subcategory {
-        padding: 12px 16px;
-        border-top: 1px solid #f0f0f0;
-        background: #fafafa;
-    }
-
-    .keyword-subcategory-inline {
-        margin-bottom: 16px;
-    }
-
-    .keyword-subcategory-title {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: #6e6e73;
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-
-    .keyword-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-
-    .keyword-tag {
-        background: #ffffff;
-        border: 1px solid #d1d1d6;
-        border-radius: 12px;
-        padding: 4px 10px;
-        font-size: 0.75rem;
-        color: #1d1d1f;
-    }
-
-    .keyword-tag-core {
-        background: #e8f4fd;
-        border-color: #b3d4fc;
-        color: #0056b3;
-    }
-
-    .keyword-pill {
-        background: #ffffff;
-        border: 1px solid #d1d1d6;
-        border-radius: 16px;
-        padding: 6px 14px;
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: #1d1d1f;
-    }
-
-    /* details/summary 스타일 */
-    details.keyword-category {
-        background: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 10px;
-        overflow: hidden;
-    }
-
-    details.keyword-category > summary {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 16px;
-        background: #ffffff;
-        cursor: pointer;
-        list-style: none;
-        transition: background 0.2s;
-    }
-
-    details.keyword-category > summary::-webkit-details-marker {
-        display: none;
-    }
-
-    details.keyword-category > summary::before {
-        content: '+';
-        margin-right: 10px;
-        font-weight: 600;
-        color: #007aff;
-        font-size: 1.1rem;
-    }
-
-    details.keyword-category[open] > summary::before {
-        content: '-';
-    }
-
-    details.keyword-category > summary:hover {
-        background: #fafafa;
-    }
-
-    details.keyword-category[open] > summary {
-        border-bottom: 1px solid #f0f0f0;
-    }
-
-    /* 사이드바 */
-    .css-1d391kg {
-        background: #f5f5f7;
-    }
-
-    /* selectbox */
-    .stSelectbox > div > div {
-        border: 1px solid #d1d1d6;
-        border-radius: 8px;
-    }
+    .main { background-color: #ffffff; }
+    .status-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: 500; }
+    .status-running { background: #d4edda; color: #155724; }
+    .status-stopped { background: #f8d7da; color: #721c24; }
+    .compact-box { background: #f8f9fa; border-radius: 8px; padding: 12px; margin: 8px 0; }
+    .news-card { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px; margin: 8px 0; }
+    .news-title { font-weight: 600; color: #1d1d1f; margin-bottom: 4px; }
+    .news-meta { font-size: 0.8rem; color: #666; }
+    .keyword-tag { display: inline-block; background: #e8f4fd; color: #0056b3; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 0.8rem; }
 </style>
 """, unsafe_allow_html=True)
 
-# 스크립트 경로
 SCRIPTS_DIR = current_dir / "scripts"
 NEWS_SCRIPT = SCRIPTS_DIR / "run_news_collection.py"
 UPLOAD_SCRIPT = SCRIPTS_DIR / "run_upload_monitor.py"
 DELETION_SCRIPT = SCRIPTS_DIR / "run_row_deletion.py"
 
-# 프로세스 이름
 PROC_NEWS = "news_collection"
 PROC_UPLOAD = "upload_monitor"
 PROC_DELETION = "row_deletion"
 
 
 def init_session_state():
-    """세션 상태 초기화"""
     if 'process_manager' not in st.session_state:
         st.session_state.process_manager = ProcessManager()
     if 'config_manager' not in st.session_state:
         st.session_state.config_manager = ConfigManager()
 
 
-def render_status_overview():
-    """상단 상태 개요 표시 - 테이블 형식"""
+def init_database():
+    try:
+        from utils.database import init_database as db_init
+        db_init()
+        return True
+    except Exception as e:
+        st.error(f"DB 초기화 실패: {e}")
+        return False
+
+
+def render_main_page():
     pm = st.session_state.process_manager
     cm = st.session_state.config_manager
 
-    st.markdown('<div class="main-header">뉴스 자동화 대시보드</div>', unsafe_allow_html=True)
+    st.title("뉴스 자동화 대시보드")
 
-    # 상태 데이터 수집
+    col1, col2, col3 = st.columns(3)
+    
     news_status = pm.get_status(PROC_NEWS)
     upload_status = pm.get_status(PROC_UPLOAD)
     deletion_status = pm.get_status(PROC_DELETION)
 
-    def get_status_html(running):
-        if running:
-            return '<span class="status-running">실행중</span>'
-        return '<span class="status-stopped">중지됨</span>'
-
-    # 상태 테이블 HTML
-    st.markdown(f"""
-    <table class="status-table">
-        <thead>
-            <tr>
-                <th>기능</th>
-                <th>상태</th>
-                <th>실행 시간</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>뉴스 수집</td>
-                <td>{get_status_html(news_status['running'])}</td>
-                <td>{news_status['runtime'] or '-'}</td>
-            </tr>
-            <tr>
-                <td>업로드 감시</td>
-                <td>{get_status_html(upload_status['running'])}</td>
-                <td>{upload_status['runtime'] or '-'}</td>
-            </tr>
-            <tr>
-                <td>완료행 삭제</td>
-                <td>{get_status_html(deletion_status['running'])}</td>
-                <td>{deletion_status['runtime'] or '-'}</td>
-            </tr>
-        </tbody>
-    </table>
-    """, unsafe_allow_html=True)
-
-    # 등록된 키워드 표시 (세부 키워드 포함)
-    news_config = cm.get("news_collection")
-    keywords = news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15})
-    category_keywords = get_category_keywords(cm)
-
-    st.markdown('<div class="keyword-overview"><span class="keyword-label">등록된 키워드:</span></div>', unsafe_allow_html=True)
-
-    # 각 카테고리별 확장 가능한 섹션 표시
-    for kw, cnt in keywords.items():
-        if kw in category_keywords:
-            cat_info = category_keywords[kw]
-            core_keywords = cat_info.get("core", [])
-            general_keywords = cat_info.get("general", [])
-            total_count = len(core_keywords) + len(general_keywords)
-
-            with st.expander(f"{kw} ({cnt}개 수집) - 세부 키워드 {total_count}개", expanded=False):
-                # 핵심 키워드
-                core_tags = " ".join([f'<span class="keyword-tag keyword-tag-core">{k}</span>' for k in core_keywords])
-                st.markdown(f'''
-                <div class="keyword-subcategory-inline">
-                    <div class="keyword-subcategory-title">핵심 ({len(core_keywords)})</div>
-                    <div class="keyword-tags">{core_tags}</div>
-                </div>
-                ''', unsafe_allow_html=True)
-
-                # 일반 키워드
-                general_tags = " ".join([f'<span class="keyword-tag">{k}</span>' for k in general_keywords])
-                st.markdown(f'''
-                <div class="keyword-subcategory-inline">
-                    <div class="keyword-subcategory-title">일반 ({len(general_keywords)})</div>
-                    <div class="keyword-tags">{general_tags}</div>
-                </div>
-                ''', unsafe_allow_html=True)
-        else:
-            # category_keywords에 없는 키워드는 기본 pill로 표시
-            st.markdown(f'<span class="keyword-pill">{kw} ({cnt})</span>', unsafe_allow_html=True)
-
-
-def render_news_collection_tab():
-    """뉴스 수집 탭"""
-    pm = st.session_state.process_manager
-    cm = st.session_state.config_manager
-
-    st.markdown('<div class="section-title">뉴스 수집</div>', unsafe_allow_html=True)
-
-    status = pm.get_status(PROC_NEWS)
-    is_running = status['running']
-
-    # 설정
-    with st.expander("설정", expanded=not is_running):
-        news_config = cm.get("news_collection")
-        keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
-
-        # 현재 키워드 테이블
-        st.markdown('<div class="section-subtitle">현재 키워드 설정</div>', unsafe_allow_html=True)
-
-        keyword_rows = ""
-        for kw, cnt in keywords.items():
-            keyword_rows += f"<tr><td>{kw}</td><td>{cnt}개</td></tr>"
-
-        st.markdown(f"""
-        <table class="keyword-table">
-            <thead>
-                <tr><th>키워드</th><th>수집 개수</th></tr>
-            </thead>
-            <tbody>{keyword_rows}</tbody>
-        </table>
-        """, unsafe_allow_html=True)
-
-        # 키워드별 수집 개수 수정
-        st.markdown('<div class="section-subtitle">키워드별 수집 개수 수정</div>', unsafe_allow_html=True)
-
-        updated_keywords = {}
-        need_save = False
-
-        if keywords:
-            cols = st.columns(min(len(keywords), 3))
-            for idx, (keyword, count) in enumerate(keywords.items()):
-                with cols[idx % len(cols)]:
-                    new_count = st.number_input(
-                        keyword,
-                        min_value=1,
-                        max_value=100,
-                        value=count,
-                        key=f"keyword_{keyword}",
-                        disabled=is_running
-                    )
-                    updated_keywords[keyword] = new_count
-                    if new_count != count:
-                        need_save = True
-
-        # 수정된 내용 자동 저장
-        if need_save and not is_running:
-            cm.set("news_collection", "keywords", updated_keywords)
-            st.markdown('<div class="info-box">설정이 자동 저장되었습니다.</div>', unsafe_allow_html=True)
-
-        # 새 키워드 추가
-        st.markdown("---")
-        st.markdown('<div class="section-subtitle">새 키워드 추가</div>', unsafe_allow_html=True)
-
-        col1, col2, col3 = st.columns([3, 2, 1])
-        with col1:
-            new_keyword = st.text_input("키워드 이름", key="new_keyword", disabled=is_running, placeholder="예: 경제")
-        with col2:
-            new_keyword_count = st.number_input("수집 개수", min_value=1, max_value=100, value=15, key="new_keyword_count", disabled=is_running)
-        with col3:
-            st.write("")
-            if st.button("추가", disabled=is_running or not new_keyword, use_container_width=True):
-                if new_keyword and new_keyword.strip():
-                    new_kw = new_keyword.strip()
-                    if new_kw not in keywords:
-                        keywords[new_kw] = new_keyword_count
-                        cm.set("news_collection", "keywords", keywords)
-                        # 새 카테고리에 대한 빈 키워드 목록 생성
-                        category_keywords = cm.get("category_keywords", default={})
-                        if new_kw not in category_keywords:
-                            category_keywords[new_kw] = {"core": [], "general": []}
-                            cm.set_section("category_keywords", category_keywords)
-                        st.rerun()
-
-        # 키워드 삭제
-        if len(keywords) > 1:
-            st.markdown('<div class="section-subtitle">키워드 삭제</div>', unsafe_allow_html=True)
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                keyword_to_delete = st.selectbox(
-                    "삭제할 키워드 선택",
-                    options=["선택하세요"] + list(keywords.keys()),
-                    key="delete_keyword",
-                    disabled=is_running
-                )
-            with col2:
-                st.write("")
-                if st.button("삭제", disabled=is_running or keyword_to_delete == "선택하세요", use_container_width=True):
-                    if keyword_to_delete != "선택하세요" and keyword_to_delete in keywords:
-                        del keywords[keyword_to_delete]
-                        cm.set("news_collection", "keywords", keywords)
-                        # 카테고리 키워드도 함께 삭제
-                        category_keywords = cm.get("category_keywords", default={})
-                        if keyword_to_delete in category_keywords:
-                            del category_keywords[keyword_to_delete]
-                            cm.set_section("category_keywords", category_keywords)
-                        st.rerun()
-
-        # 카테고리별 세부 키워드 수정 (실시간 텍스트 영역 방식)
-        st.markdown("---")
-        st.markdown('<div class="section-subtitle">카테고리별 세부 키워드 수정</div>', unsafe_allow_html=True)
-        st.caption("각 카테고리의 키워드를 쉼표(,)로 구분하여 실시간으로 수정할 수 있습니다. 수정 후 '저장' 버튼을 클릭하세요.")
-
-        category_keywords = get_category_keywords(cm)
-
-        for category in keywords.keys():
-            with st.expander(f"{category} 세부 키워드 편집", expanded=False):
-                cat_data = category_keywords.get(category, {"core": [], "general": []})
-                core_kws = list(cat_data.get("core", []))
-                general_kws = list(cat_data.get("general", []))
-
-                # Core 키워드 텍스트 영역
-                st.markdown("**Core 키워드** (핵심 검색어 - 뉴스 검색에 직접 사용)")
-                core_text = st.text_area(
-                    "Core 키워드 (쉼표로 구분)",
-                    value=", ".join(core_kws),
-                    key=f"core_text_{category}",
-                    disabled=is_running,
-                    height=100,
-                    placeholder="예: 연애, 열애, 결혼, 이혼"
-                )
-
-                # General 키워드 텍스트 영역
-                st.markdown("**General 키워드** (일반 검색어 - 뉴스 분류에 사용)")
-                general_text = st.text_area(
-                    "General 키워드 (쉼표로 구분)",
-                    value=", ".join(general_kws),
-                    key=f"general_text_{category}",
-                    disabled=is_running,
-                    height=100,
-                    placeholder="예: 신랑, 웨딩, 커플링"
-                )
-
-                # 저장 버튼
-                if st.button(f"{category} 키워드 저장", key=f"save_keywords_{category}", disabled=is_running, type="primary"):
-                    # 텍스트에서 키워드 파싱
-                    new_core = [kw.strip() for kw in core_text.split(",") if kw.strip()]
-                    new_general = [kw.strip() for kw in general_text.split(",") if kw.strip()]
-                    
-                    # 중복 제거
-                    new_core = list(dict.fromkeys(new_core))
-                    new_general = list(dict.fromkeys(new_general))
-                    
-                    # 저장
-                    cat_data["core"] = new_core
-                    cat_data["general"] = new_general
-                    category_keywords[category] = cat_data
-                    cm.set_section("category_keywords", category_keywords)
-                    st.success(f"{category} 키워드가 저장되었습니다! (Core: {len(new_core)}개, General: {len(new_general)}개)")
-                    st.rerun()
-
-                # 현재 키워드 개수 표시
-                st.caption(f"현재: Core {len(core_kws)}개, General {len(general_kws)}개")
-
-        # 빠른 키워드 추가 (특정 키워드 입력 시 관련 키워드도 함께)
-        st.markdown("---")
-        st.markdown('<div class="section-subtitle">빠른 키워드 추가</div>', unsafe_allow_html=True)
-        st.caption("특정 키워드를 입력하면 해당 카테고리의 Core 키워드로 추가됩니다.")
-        
-        col1, col2, col3 = st.columns([2, 2, 1])
-        with col1:
-            quick_keyword = st.text_input(
-                "추가할 키워드",
-                key="quick_keyword",
-                disabled=is_running,
-                placeholder="예: 손흥민"
-            )
-        with col2:
-            target_category = st.selectbox(
-                "대상 카테고리",
-                options=list(keywords.keys()),
-                key="target_category",
-                disabled=is_running
-            )
-        with col3:
-            st.write("")
-            if st.button("추가", key="quick_add", disabled=is_running or not quick_keyword, use_container_width=True):
-                if quick_keyword and quick_keyword.strip():
-                    new_kw = quick_keyword.strip()
-                    cat_data = category_keywords.get(target_category, {"core": [], "general": []})
-                    core_kws = list(cat_data.get("core", []))
-                    
-                    if new_kw not in core_kws:
-                        core_kws.append(new_kw)
-                        cat_data["core"] = core_kws
-                        category_keywords[target_category] = cat_data
-                        cm.set_section("category_keywords", category_keywords)
-                        st.success(f"'{new_kw}'가 {target_category} Core 키워드에 추가되었습니다!")
-                        st.rerun()
-                    else:
-                        st.warning(f"'{new_kw}'는 이미 {target_category}에 존재합니다.")
-
-    # 제어
-    st.markdown('<div class="section-subtitle">제어</div>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns([1, 3])
     with col1:
-        if is_running:
-            if st.button("중지", key="stop_news", type="secondary", use_container_width=True):
+        status_class = "status-running" if news_status['running'] else "status-stopped"
+        status_text = "실행중" if news_status['running'] else "중지됨"
+        st.markdown(f'<div class="compact-box"><b>뉴스 수집</b><br><span class="status-badge {status_class}">{status_text}</span></div>', unsafe_allow_html=True)
+        
+        if news_status['running']:
+            if st.button("중지", key="stop_news", use_container_width=True):
                 pm.stop_process(PROC_NEWS)
                 st.rerun()
         else:
             if st.button("시작", key="start_news", type="primary", use_container_width=True):
-                # 최신 설정을 다시 로드하여 사용
                 config = cm.get_news_config()
                 pm.start_process(PROC_NEWS, str(NEWS_SCRIPT), config)
                 st.rerun()
 
     with col2:
-        if is_running and status['runtime']:
-            st.markdown(f'<div class="info-box">실행 시간: {status["runtime"]}</div>', unsafe_allow_html=True)
-
-
-def render_upload_monitor_tab():
-    """업로드 감시 탭"""
-    pm = st.session_state.process_manager
-    cm = st.session_state.config_manager
-
-    st.markdown('<div class="section-title">업로드 감시</div>', unsafe_allow_html=True)
-
-    status = pm.get_status(PROC_UPLOAD)
-    is_running = status['running']
-
-    with st.expander("설정", expanded=not is_running):
-        upload_config = cm.get("upload_monitor")
-
-        check_interval = st.number_input(
-            "체크 간격 (초)",
-            min_value=10,
-            max_value=600,
-            value=upload_config.get('check_interval', 30),
-            step=10,
-            key="check_interval",
-            disabled=is_running,
-            help="구글 시트를 확인하는 간격"
-        )
-
-        if not is_running:
-            if st.button("설정 저장", key="save_upload", type="secondary"):
-                cm.set("upload_monitor", "check_interval", check_interval)
-                st.success("설정이 저장되었습니다.")
-
-    st.markdown('<div class="section-subtitle">제어</div>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if is_running:
-            if st.button("중지", key="stop_upload", type="secondary", use_container_width=True):
+        status_class = "status-running" if upload_status['running'] else "status-stopped"
+        status_text = "실행중" if upload_status['running'] else "중지됨"
+        st.markdown(f'<div class="compact-box"><b>업로드 감시</b><br><span class="status-badge {status_class}">{status_text}</span></div>', unsafe_allow_html=True)
+        
+        if upload_status['running']:
+            if st.button("중지", key="stop_upload", use_container_width=True):
                 pm.stop_process(PROC_UPLOAD)
                 st.rerun()
         else:
             if st.button("시작", key="start_upload", type="primary", use_container_width=True):
                 config = cm.get_upload_config()
-                config['check_interval'] = check_interval
                 pm.start_process(PROC_UPLOAD, str(UPLOAD_SCRIPT), config)
                 st.rerun()
 
-    with col2:
-        if is_running and status['runtime']:
-            st.markdown(f'<div class="info-box">실행 시간: {status["runtime"]}</div>', unsafe_allow_html=True)
-
-    if is_running:
-        st.markdown('<div class="success-box">E열/F열 데이터가 채워지면 자동으로 뉴스타운에 업로드합니다.</div>', unsafe_allow_html=True)
-
-
-def render_row_deletion_tab():
-    """완료행 삭제 탭"""
-    pm = st.session_state.process_manager
-    cm = st.session_state.config_manager
-
-    st.markdown('<div class="section-title">완료행 삭제</div>', unsafe_allow_html=True)
-
-    status = pm.get_status(PROC_DELETION)
-    is_running = status['running']
-
-    with st.expander("설정", expanded=not is_running):
-        deletion_config = cm.get("row_deletion")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            delete_interval = st.number_input(
-                "삭제 간격 (분)",
-                min_value=1,
-                max_value=1440,
-                value=deletion_config.get('delete_interval', 60),
-                step=10,
-                key="delete_interval",
-                disabled=is_running,
-                help="완료된 행을 삭제하는 간격"
-            )
-
-        with col2:
-            max_delete_count = st.number_input(
-                "최대 삭제 개수",
-                min_value=1,
-                max_value=100,
-                value=deletion_config.get('max_delete_count', 10),
-                step=5,
-                key="max_delete_count",
-                disabled=is_running,
-                help="한 번에 삭제할 최대 행 수"
-            )
-
-        if not is_running:
-            if st.button("설정 저장", key="save_deletion", type="secondary"):
-                cm.set("row_deletion", "delete_interval", delete_interval, save=False)
-                cm.set("row_deletion", "max_delete_count", max_delete_count)
-                st.success("설정이 저장되었습니다.")
-
-    st.markdown('<div class="section-subtitle">제어</div>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if is_running:
-            if st.button("중지", key="stop_deletion", type="secondary", use_container_width=True):
+    with col3:
+        status_class = "status-running" if deletion_status['running'] else "status-stopped"
+        status_text = "실행중" if deletion_status['running'] else "중지됨"
+        st.markdown(f'<div class="compact-box"><b>완료행 삭제</b><br><span class="status-badge {status_class}">{status_text}</span></div>', unsafe_allow_html=True)
+        
+        if deletion_status['running']:
+            if st.button("중지", key="stop_deletion", use_container_width=True):
                 pm.stop_process(PROC_DELETION)
                 st.rerun()
         else:
             if st.button("시작", key="start_deletion", type="primary", use_container_width=True):
                 config = cm.get_deletion_config()
-                config['delete_interval'] = delete_interval
-                config['max_delete_count'] = max_delete_count
                 pm.start_process(PROC_DELETION, str(DELETION_SCRIPT), config)
                 st.rerun()
 
+    st.divider()
+
+    with st.expander("키워드 설정", expanded=False):
+        news_config = cm.get("news_collection")
+        keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
+        category_keywords = cm.get("category_keywords", default={})
+
+        cols = st.columns(len(keywords))
+        updated = {}
+        for idx, (kw, cnt) in enumerate(keywords.items()):
+            with cols[idx]:
+                updated[kw] = st.number_input(kw, min_value=1, max_value=100, value=cnt, key=f"kw_{kw}")
+        
+        if updated != keywords:
+            cm.set("news_collection", "keywords", updated)
+
+        st.markdown("---")
+        
+        selected_cat = st.selectbox("세부 키워드 편집", list(keywords.keys()))
+        if selected_cat:
+            cat_data = category_keywords.get(selected_cat, {"core": [], "general": []})
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                core_text = st.text_area(
+                    "Core 키워드 (검색용)",
+                    value=", ".join(cat_data.get("core", [])),
+                    key=f"core_{selected_cat}",
+                    height=80
+                )
+            with col2:
+                general_text = st.text_area(
+                    "General 키워드 (분류용)",
+                    value=", ".join(cat_data.get("general", [])),
+                    key=f"general_{selected_cat}",
+                    height=80
+                )
+            
+            if st.button("키워드 저장", key="save_kw"):
+                new_core = [k.strip() for k in core_text.split(",") if k.strip()]
+                new_general = [k.strip() for k in general_text.split(",") if k.strip()]
+                cat_data["core"] = list(dict.fromkeys(new_core))
+                cat_data["general"] = list(dict.fromkeys(new_general))
+                category_keywords[selected_cat] = cat_data
+                cm.set_section("category_keywords", category_keywords)
+                st.success("저장됨!")
+
+
+def render_news_page():
+    st.title("수집된 뉴스")
+    
+    try:
+        from utils.database import get_news_list, get_news_stats, get_news_count
+        
+        stats = get_news_stats()
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("전체", stats.get('total', 0))
+        col2.metric("대기중", stats.get('pending', 0))
+        col3.metric("업로드됨", stats.get('uploaded', 0))
+        col4.metric("실패", stats.get('failed', 0))
+
+        st.divider()
+
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            category_filter = st.selectbox("카테고리", ["전체", "연애", "경제", "스포츠"])
+        with col2:
+            status_filter = st.selectbox("상태", ["전체", "pending", "uploaded", "failed"])
+
+        cat = None if category_filter == "전체" else category_filter
+        stat = None if status_filter == "전체" else status_filter
+        
+        news_list = get_news_list(category=cat, status=stat, limit=20)
+
+        if news_list:
+            for news in news_list:
+                with st.container():
+                    st.markdown(f"""
+                    <div class="news-card">
+                        <div class="news-title">{news.get('title', '')[:80]}...</div>
+                        <div class="news-meta">
+                            <span class="keyword-tag">{news.get('category', '미분류')}</span>
+                            상태: {news.get('status', 'pending')} | 
+                            {news.get('created_at', '')[:16] if news.get('created_at') else ''}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    with st.expander("본문 보기"):
+                        st.write(news.get('content', '')[:500] + "..." if len(news.get('content', '')) > 500 else news.get('content', ''))
+                        if news.get('link'):
+                            st.markdown(f"[원본 링크]({news.get('link')})")
+        else:
+            st.info("수집된 뉴스가 없습니다. 뉴스 수집을 시작해주세요.")
+            
+    except Exception as e:
+        st.error(f"데이터베이스 연결 오류: {e}")
+        st.info("데이터베이스가 아직 초기화되지 않았습니다.")
+
+
+def render_prompt_page():
+    st.title("프롬프트 관리")
+    
+    try:
+        from utils.database import get_prompts, save_prompt, update_prompt, delete_prompt
+        
+        with st.expander("새 프롬프트 추가", expanded=False):
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                new_name = st.text_input("프롬프트 이름", placeholder="예: 뉴스 요약 프롬프트")
+            with col2:
+                new_category = st.selectbox("카테고리", ["전체", "연애", "경제", "스포츠"], key="new_cat")
+            
+            new_prompt = st.text_area(
+                "프롬프트 내용",
+                height=150,
+                placeholder="뉴스 기사를 가공할 프롬프트를 입력하세요.\n\n예: 다음 뉴스 기사를 300자 이내로 요약해주세요. 핵심 내용만 포함하고, 자극적인 표현은 피해주세요."
+            )
+            
+            if st.button("프롬프트 추가", type="primary"):
+                if new_name and new_prompt:
+                    save_prompt(new_name, new_category, new_prompt)
+                    st.success("프롬프트가 추가되었습니다!")
+                    st.rerun()
+                else:
+                    st.warning("이름과 내용을 입력해주세요.")
+
+        st.divider()
+        st.subheader("저장된 프롬프트")
+
+        prompts = get_prompts(active_only=False)
+        
+        if prompts:
+            for prompt in prompts:
+                with st.container():
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.markdown(f"**{prompt['name']}** ({prompt.get('category', '전체')})")
+                    with col2:
+                        status = "활성" if prompt.get('is_active') else "비활성"
+                        st.caption(status)
+                    with col3:
+                        if st.button("삭제", key=f"del_{prompt['id']}"):
+                            delete_prompt(prompt['id'])
+                            st.rerun()
+                    
+                    with st.expander("프롬프트 보기/편집"):
+                        edited = st.text_area(
+                            "내용",
+                            value=prompt.get('prompt_text', ''),
+                            key=f"edit_{prompt['id']}",
+                            height=120
+                        )
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("저장", key=f"save_{prompt['id']}"):
+                                update_prompt(prompt['id'], prompt_text=edited)
+                                st.success("저장됨!")
+                        with col2:
+                            active = st.checkbox("활성화", value=prompt.get('is_active', True), key=f"active_{prompt['id']}")
+                            if active != prompt.get('is_active'):
+                                update_prompt(prompt['id'], is_active=active)
+        else:
+            st.info("저장된 프롬프트가 없습니다. 새 프롬프트를 추가해주세요.")
+            
+    except Exception as e:
+        st.error(f"오류: {e}")
+
+
+def render_settings_page():
+    st.title("설정")
+    
+    cm = st.session_state.config_manager
+    
+    st.subheader("구글 시트 연동")
+    sheet_url = st.text_input(
+        "구글 시트 URL",
+        value=cm.get("google_sheet", "url", ""),
+        help="뉴스 데이터가 저장될 구글 시트 URL"
+    )
+    if st.button("URL 저장"):
+        cm.set("google_sheet", "url", sheet_url)
+        st.success("저장됨!")
+
+    st.divider()
+    
+    st.subheader("뉴스타운 로그인")
+    col1, col2 = st.columns(2)
+    with col1:
+        site_id = st.text_input("아이디", value=cm.get("newstown", "site_id", ""))
     with col2:
-        if is_running and status['runtime']:
-            st.markdown(f'<div class="info-box">실행 시간: {status["runtime"]}</div>', unsafe_allow_html=True)
+        site_pw = st.text_input("비밀번호", value=cm.get("newstown", "site_pw", ""), type="password")
+    
+    if st.button("로그인 정보 저장"):
+        cm.set("newstown", "site_id", site_id)
+        cm.set("newstown", "site_pw", site_pw)
+        st.success("저장됨!")
 
-    if is_running:
-        st.markdown(f'<div class="success-box">H열에 "완료" 표시된 행을 {delete_interval}분마다 자동으로 삭제합니다.</div>', unsafe_allow_html=True)
+    st.divider()
 
+    st.subheader("네이버 API")
+    col1, col2 = st.columns(2)
+    with col1:
+        client_id = st.text_input("Client ID", value=cm.get("naver_api", "client_id", ""))
+    with col2:
+        client_secret = st.text_input("Client Secret", value=cm.get("naver_api", "client_secret", ""), type="password")
+    
+    if st.button("API 정보 저장"):
+        cm.set("naver_api", "client_id", client_id)
+        cm.set("naver_api", "client_secret", client_secret)
+        st.success("저장됨!")
 
-def render_sidebar():
-    """사이드바"""
-    with st.sidebar:
-        st.markdown("### 전역 설정")
+    st.divider()
 
-        cm = st.session_state.config_manager
-
-        sheet_url = st.text_input(
-            "구글 시트 URL",
-            value=cm.get("google_sheet", "url", ""),
-            key="sheet_url"
+    st.subheader("업로드/삭제 설정")
+    col1, col2 = st.columns(2)
+    with col1:
+        check_interval = st.number_input(
+            "업로드 체크 간격 (초)",
+            min_value=10, max_value=600,
+            value=cm.get("upload_monitor", "check_interval", 30)
         )
-
-        if st.button("URL 저장"):
-            cm.set("google_sheet", "url", sheet_url)
-            st.success("저장됨")
-
-        st.divider()
-
-        pm = st.session_state.process_manager
-        if st.button("모든 프로세스 중지", type="secondary", use_container_width=True):
-            pm.stop_all()
-            st.rerun()
-
-        st.divider()
-
-        auto_refresh = st.checkbox("자동 새로고침 (5초)", value=False, key="auto_refresh")
-        if auto_refresh:
-            st.rerun()
-
-        st.divider()
-
-        st.markdown("### 기능 안내")
-        st.markdown("""
-        **뉴스 수집**: 네이버 뉴스를 검색하여 구글 시트에 저장
-
-        **업로드 감시**: E/F열 데이터를 감시하여 뉴스타운에 업로드
-
-        **완료행 삭제**: H열 '완료' 표시된 행을 자동 삭제
-        """)
+    with col2:
+        delete_interval = st.number_input(
+            "삭제 간격 (분)",
+            min_value=1, max_value=1440,
+            value=cm.get("row_deletion", "delete_interval", 60)
+        )
+    
+    if st.button("간격 설정 저장"):
+        cm.set("upload_monitor", "check_interval", check_interval)
+        cm.set("row_deletion", "delete_interval", delete_interval)
+        st.success("저장됨!")
 
 
 def main():
-    """메인 함수"""
     init_session_state()
-    render_status_overview()
-    render_sidebar()
+    init_database()
 
-    tab1, tab2, tab3 = st.tabs(["뉴스 수집", "업로드 감시", "완료행 삭제"])
+    with st.sidebar:
+        st.title("메뉴")
+        page = st.radio(
+            "페이지 선택",
+            ["대시보드", "뉴스 조회", "프롬프트 관리", "설정"],
+            label_visibility="collapsed"
+        )
+        
+        st.divider()
+        
+        pm = st.session_state.process_manager
+        if st.button("모든 프로세스 중지", use_container_width=True):
+            pm.stop_all()
+            st.rerun()
 
-    with tab1:
-        render_news_collection_tab()
-
-    with tab2:
-        render_upload_monitor_tab()
-
-    with tab3:
-        render_row_deletion_tab()
+    if page == "대시보드":
+        render_main_page()
+    elif page == "뉴스 조회":
+        render_news_page()
+    elif page == "프롬프트 관리":
+        render_prompt_page()
+    elif page == "설정":
+        render_settings_page()
 
 
 if __name__ == "__main__":
