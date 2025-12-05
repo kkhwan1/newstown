@@ -1159,8 +1159,8 @@ def check_duplicate_in_cache(existing_data, link, title=None):
         # 제목 유사도 체크
         for existing_title, normalized_existing_title in zip(existing_data['titles'], existing_data['normalized_titles']):
             similarity = calculate_similarity(normalized_new_title, normalized_existing_title)
-            # 유사도가 0.90 이상이면 중복으로 간주 (더 엄격하게)
-            if similarity >= 0.90:
+            # 유사도가 0.75 이상이면 중복으로 간주
+            if similarity >= 0.75:
                 return True
     
     return False
@@ -1368,7 +1368,7 @@ def main():
                 continue
             
             print(f"   '{keyword}' 키워드로 추가 검색 중... (현재: {len(all_news_items)}/{target_count}개)")
-            news_result = get_naver_news(keyword, display=search_count, sort='date')
+            news_result = get_naver_news(keyword, display=search_count, sort='sim')
             
             if news_result and 'items' in news_result:
                 new_items_count = 0
@@ -1535,7 +1535,7 @@ def main():
                     
                     # 더 많은 뉴스 검색
                     search_count = min(count * 5, 100)
-                    news_result = get_naver_news(keyword, display=search_count, sort='date')
+                    news_result = get_naver_news(keyword, display=search_count, sort='sim')
                     
                     if news_result and 'items' in news_result:
                         for item in news_result['items']:
