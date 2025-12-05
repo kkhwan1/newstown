@@ -159,33 +159,62 @@ def render_main_page():
     keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
     categories = ["연애", "경제", "스포츠"]
 
-    col1, col2, col3 = st.columns(3)
-    procs = [
-        (PROC_NEWS, "뉴스 수집", NEWS_SCRIPT),
-        (PROC_UPLOAD, "업로드 감시", UPLOAD_SCRIPT),
-        (PROC_DELETION, "완료행 삭제", DELETION_SCRIPT)
-    ]
+    st.markdown("### 뉴스타운 업로드")
+    st.caption("스프레드시트의 뉴스를 뉴스타운에 자동 업로드합니다")
     
-    for col, (proc, name, script) in zip([col1, col2, col3], procs):
-        status = pm.get_status(proc)
-        is_run = status['running']
-        with col:
-            st.markdown(f'<div class="status-box"><b>{name}</b><br><span class="{"status-run" if is_run else "status-stop"}">{"● 실행중" if is_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
-            
-            if is_run:
-                if st.button("중지", key=f"stop_{proc}", use_container_width=True):
-                    pm.stop_process(proc)
-                    st.rerun()
-            else:
-                if st.button("시작", key=f"start_{proc}", type="primary", use_container_width=True):
-                    if proc == PROC_NEWS:
-                        config = cm.get_news_config()
-                    elif proc == PROC_UPLOAD:
-                        config = cm.get_upload_config()
-                    else:
-                        config = cm.get_deletion_config()
-                    pm.start_process(proc, str(script), config)
-                    st.rerun()
+    col_up1, col_up2 = st.columns(2)
+    
+    with col_up1:
+        upload_status = pm.get_status(PROC_UPLOAD)
+        is_upload_run = upload_status['running']
+        st.markdown(f'<div class="status-box"><b>업로드 감시</b><br><span class="{"status-run" if is_upload_run else "status-stop"}">{"● 실행중" if is_upload_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
+        
+        if is_upload_run:
+            if st.button("중지", key="stop_upload_main", use_container_width=True):
+                pm.stop_process(PROC_UPLOAD)
+                st.rerun()
+        else:
+            if st.button("뉴스타운 업로드 시작", key="start_upload_main", type="primary", use_container_width=True):
+                config = cm.get_upload_config()
+                pm.start_process(PROC_UPLOAD, str(UPLOAD_SCRIPT), config)
+                st.rerun()
+    
+    with col_up2:
+        deletion_status = pm.get_status(PROC_DELETION)
+        is_del_run = deletion_status['running']
+        st.markdown(f'<div class="status-box"><b>완료행 삭제</b><br><span class="{"status-run" if is_del_run else "status-stop"}">{"● 실행중" if is_del_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
+        
+        if is_del_run:
+            if st.button("중지", key="stop_del_main", use_container_width=True):
+                pm.stop_process(PROC_DELETION)
+                st.rerun()
+        else:
+            if st.button("완료행 삭제 시작", key="start_del_main", type="primary", use_container_width=True):
+                config = cm.get_deletion_config()
+                pm.start_process(PROC_DELETION, str(DELETION_SCRIPT), config)
+                st.rerun()
+
+    st.markdown("---")
+    
+    st.markdown("### 뉴스 수집")
+    st.caption("네이버 API로 뉴스를 수집하여 DB와 스프레드시트에 저장합니다")
+    
+    news_status = pm.get_status(PROC_NEWS)
+    is_news_run = news_status['running']
+    
+    col_n1, col_n2 = st.columns([2, 1])
+    with col_n1:
+        st.markdown(f'<div class="status-box"><b>뉴스 수집</b><br><span class="{"status-run" if is_news_run else "status-stop"}">{"● 실행중" if is_news_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
+    with col_n2:
+        if is_news_run:
+            if st.button("중지", key="stop_news_main", use_container_width=True):
+                pm.stop_process(PROC_NEWS)
+                st.rerun()
+        else:
+            if st.button("뉴스 수집 시작", key="start_news_main", type="primary", use_container_width=True):
+                config = cm.get_news_config()
+                pm.start_process(PROC_NEWS, str(NEWS_SCRIPT), config)
+                st.rerun()
 
     st.markdown("---")
     
