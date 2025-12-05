@@ -93,14 +93,36 @@ def retry_with_backoff(func, *args, **kwargs):
 
 def get_chrome_driver():
     """ChromeDriver 초기화 함수"""
+    import shutil
+    import os
+    
     options = webdriver.ChromeOptions()
-    # options.add_argument("--headless") # 창을 안 보고 싶으면 이 줄의 주석(#)을 지우세요
-    options.add_argument("--start-maximized") # 창 최대화
-    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
+    
+    chromium_path = shutil.which('chromium')
+    chromedriver_path = shutil.which('chromedriver')
     
     driver = None
+    
+    if chromium_path and chromedriver_path:
+        print(f"   Chromium: {chromium_path}")
+        print(f"   ChromeDriver: {chromedriver_path}")
+        options.binary_location = chromium_path
+        try:
+            service = Service(chromedriver_path)
+            driver = webdriver.Chrome(service=service, options=options)
+            print("✅ Replit Chromium 사용 성공")
+            return driver
+        except Exception as e:
+            print(f"⚠️ Replit Chromium 오류: {e}")
+    
     try:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
@@ -108,15 +130,12 @@ def get_chrome_driver():
     except Exception as e:
         error_msg = str(e)
         print(f"⚠️ ChromeDriverManager 오류: {error_msg}")
-        if "WinError 193" in error_msg or "올바른 Win32 응용 프로그램이 아닙니다" in error_msg:
-            print("   시스템 PATH의 ChromeDriver 사용 시도 중...")
-            try:
-                driver = webdriver.Chrome(options=options)
-                print("✅ 시스템 PATH의 ChromeDriver 사용 성공")
-            except Exception as e2:
-                print(f"❌ ChromeDriver 초기화 실패: {e2}")
-                print("   Chrome 브라우저를 최신 버전으로 업데이트하거나 ChromeDriver를 수동으로 설치해주세요.")
-                return None
+        try:
+            driver = webdriver.Chrome(options=options)
+            print("✅ 시스템 PATH의 ChromeDriver 사용 성공")
+        except Exception as e2:
+            print(f"❌ ChromeDriver 초기화 실패: {e2}")
+            return None
     return driver
 
 def login_to_newstown(driver, wait):
