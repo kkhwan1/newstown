@@ -1377,10 +1377,16 @@ def main():
     searched_keywords = {}  # 각 키워드별 검색 횟수 추적
     total_duplicate_count = 0  # 전체 스프레드시트 중복 개수
     total_already_collected_count = 0  # 전체 이번 검색 중복 개수
+    total_not_today_count = 0  # 당일 아닌 뉴스 개수
+    total_db_duplicate_count = 0  # DB 중복 개수
     
-    print(f"\n[SEARCH] 실시간 뉴스 검색 중... (오늘 기준)")
+    # DB에서 기존 제목들 로드 (중복 체크용)
+    db_titles = get_db_titles()
+    print(f"\n[DB] 기존 DB 뉴스 {len(db_titles)}개 로드 완료")
+    
+    print(f"\n[SEARCH] 실시간 뉴스 검색 중... (당일 + 인기순)")
     print(f"   목표: 총 {target_count}개 중복 없는 뉴스")
-    print(f"   정렬: 최신순(date)\n")
+    print(f"   정렬: 인기순(sim) + 당일 뉴스만\n")
     
     # 각 키워드별로 초기 검색 개수 설정 (요청 개수의 2배로 시작하여 중복 없는 뉴스 확보)
     search_multiplier = 2  # 중복을 고려하여 2배로 검색
@@ -1415,6 +1421,8 @@ def main():
                 new_items_count = 0
                 duplicate_count = 0  # 중복된 뉴스 개수
                 already_collected_count = 0  # 이미 수집된 뉴스 개수
+                not_today_count = 0  # 당일 아닌 뉴스 개수
+                db_dup_count = 0  # DB 중복 개수
                 
                 for item in news_result['items']:
                     if len(all_news_items) >= target_count:
@@ -1422,15 +1430,31 @@ def main():
                         
                     link = item.get('link', '').strip()
                     title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                    pub_date = item.get('pubDate', '')
+                    
+                    # 0단계: 당일 뉴스만 필터링
+                    if not is_today_news(pub_date):
+                        not_today_count += 1
+                        total_not_today_count += 1
+                        continue
                     
                     # 1단계: 이미 이번 검색에서 수집된 뉴스와 중복 체크
                     if link and link not in all_news_links:
-                        # 2단계: 기존 스프레드시트와 중복 체크 (가장 중요!)
+                        # 2단계: 기존 스프레드시트와 중복 체크
                         if not check_duplicate_in_cache(existing_news_data, link, title):
+                            # 3단계: DB 중복 체크 (제목 유사도 75%)
+                            is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles, 0.75)
+                            if is_db_dup:
+                                db_dup_count += 1
+                                total_db_duplicate_count += 1
+                                print(f"         [DB중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
+                                continue
+                            
                             item['_search_keyword'] = keyword
                             all_news_items.append(item)
                             all_news_links.add(link)
                             new_items_count += 1
+                            print(f"         [신규] {title[:40]}...")
                         else:
                             duplicate_count += 1  # 스프레드시트에 이미 있는 뉴스
                             total_duplicate_count += 1
@@ -1440,10 +1464,14 @@ def main():
                 
                 searched_keywords[keyword] += len(news_result['items'])
                 print(f"      [OK] {keyword}: {new_items_count}개 신규 수집 (총 {len(all_news_items)}/{target_count}개)")
+                if not_today_count > 0:
+                    print(f"         [날짜] 당일 아닌 뉴스: {not_today_count}개 제외")
+                if db_dup_count > 0:
+                    print(f"         [DB] DB 중복: {db_dup_count}개 제외")
                 if duplicate_count > 0:
-                    print(f"         [WARN] 스프레드시트 중복: {duplicate_count}개 제외")
+                    print(f"         [시트] 스프레드시트 중복: {duplicate_count}개 제외")
                 if already_collected_count > 0:
-                    print(f"         [WARN] 이번 검색 중복: {already_collected_count}개 제외")
+                    print(f"         [검색] 이번 검색 중복: {already_collected_count}개 제외")
         
         # 목표 개수에 도달했는지 확인
         if len(all_news_items) >= target_count:
