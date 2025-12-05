@@ -18,13 +18,19 @@ if sys.platform == 'win32':
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
+from utils.logger import add_log
+
+def log(msg, level="INFO"):
+    print(f"[{level}] {msg}")
+    add_log(msg, level=level, category="NEWS")
+
 # 종료 플래그
 _shutdown_requested = False
 
 def signal_handler(signum, frame):
     """신호 핸들러 - graceful shutdown"""
     global _shutdown_requested
-    print(f"\n[WARN] 종료 신호 수신 (signal={signum}), 정리 중...")
+    log(f"종료 신호 수신 (signal={signum}), 정리 중...", "WARN")
     _shutdown_requested = True
 
 def setup_signal_handlers():
@@ -45,7 +51,7 @@ def load_config():
     try:
         return json.loads(config_str)
     except json.JSONDecodeError:
-        print("[WARN] 설정 파싱 실패, 기본값 사용")
+        log("설정 파싱 실패, 기본값 사용", "WARN")
         return {}
 
 def apply_config(config):
@@ -65,48 +71,38 @@ def apply_config(config):
             core_kws = cat_data.get('core', [])
             general_kws = cat_data.get('general', [])
             
-            # Core 키워드를 실제 검색에 사용
             if core_kws:
-                # 각 core 키워드에 수집 개수 분배
                 per_keyword_count = max(1, count // len(core_kws))
                 for kw in core_kws:
                     search_keywords[kw] = per_keyword_count
                     keyword_map[kw] = category
             else:
-                # core 키워드가 없으면 카테고리명 자체를 사용
                 search_keywords[category] = count
                 keyword_map[category] = category
             
-            # General 키워드도 카테고리 매핑에 추가 (분류용)
             for kw in general_kws:
                 keyword_map[kw] = category
         
         if search_keywords:
             naver_to_sheet.KEYWORDS = search_keywords
-            print(f"[CONFIG] 검색 키워드: {len(search_keywords)}개")
+            log(f"검색 키워드: {len(search_keywords)}개 설정됨")
             for kw, cnt in search_keywords.items():
-                print(f"   - {kw}: {cnt}개")
+                log(f"  - {kw}: {cnt}개")
         
         if keyword_map:
             naver_to_sheet.KEYWORD_CATEGORY_MAP = keyword_map
-            print(f"[CONFIG] 카테고리 매핑: {len(keyword_map)}개")
     
     elif 'keywords' in config:
-        # category_keywords가 없는 경우 기존 방식 사용
         naver_to_sheet.KEYWORDS = config['keywords']
-        print(f"[CONFIG] 키워드 설정 (기본): {config['keywords']}")
+        log(f"키워드 설정: {config['keywords']}")
 
-    # 출력 개수 설정
     if 'display_count' in config:
         naver_to_sheet.DISPLAY_COUNT = config['display_count']
-        print(f"[CONFIG] 출력 개수: {config['display_count']}")
 
-    # 구글 시트 URL
     if 'sheet_url' in config:
         naver_to_sheet.SHEET_URL = config['sheet_url']
-        print(f"[CONFIG] 시트 URL: {config['sheet_url'][:50]}...")
+        log(f"시트 URL 설정됨")
 
-    # 네이버 API 설정
     if 'naver_client_id' in config:
         naver_to_sheet.NAVER_CLIENT_ID = config['naver_client_id']
     if 'naver_client_secret' in config:
@@ -116,42 +112,37 @@ def main():
     """메인 실행 함수"""
     global _shutdown_requested
 
-    print("="*60)
-    print("  뉴스 수집 러너 시작")
-    print("="*60)
+    log("뉴스 수집 시작", "SUCCESS")
 
-    # 신호 핸들러 설정
     setup_signal_handlers()
-
-    # 설정 로드 및 적용
     config = load_config()
-    print(f"[INFO] 설정 로드됨: {json.dumps(config, ensure_ascii=False, indent=2)}")
+    
+    keywords = config.get('keywords', {})
+    total = sum(keywords.values())
+    log(f"수집 대상: 총 {total}개 (연애 {keywords.get('연애', 0)} / 경제 {keywords.get('경제', 0)} / 스포츠 {keywords.get('스포츠', 0)})")
 
-    # 설정 적용
     apply_config(config)
 
-    # 종료 확인
     if _shutdown_requested:
-        print("[STOP] 종료 요청으로 실행 취소")
+        log("종료 요청으로 실행 취소", "WARN")
         return
 
     try:
-        # naver_to_sheet의 main 함수 실행
         import naver_to_sheet
+        
+        log("네이버 API 뉴스 검색 시작...")
         naver_to_sheet.main()
 
-        print("\n[OK] 뉴스 수집 완료")
+        log("뉴스 수집 완료", "SUCCESS")
 
     except KeyboardInterrupt:
-        print("\n[STOP] 사용자에 의해 중단됨")
+        log("사용자에 의해 중단됨", "WARN")
     except Exception as e:
-        print(f"\n[ERROR] 오류 발생: {e}")
+        log(f"오류 발생: {e}", "ERROR")
         import traceback
         traceback.print_exc()
     finally:
-        print("="*60)
-        print("  뉴스 수집 러너 종료")
-        print("="*60)
+        log("뉴스 수집 프로세스 종료")
 
 if __name__ == "__main__":
     main()

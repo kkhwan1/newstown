@@ -459,6 +459,71 @@ def render_prompt_page():
         st.error(f"오류: {e}")
 
 
+def render_log_page():
+    st.markdown("# 실시간 로그")
+    
+    from utils.logger import get_logs, clear_logs
+    
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        if st.button("새로고침", use_container_width=True):
+            st.rerun()
+    with col2:
+        if st.button("로그 삭제", use_container_width=True):
+            clear_logs()
+            st.rerun()
+    with col3:
+        auto_refresh = st.checkbox("자동 새로고침 (5초)", value=False)
+    
+    if auto_refresh:
+        import time
+        time.sleep(5)
+        st.rerun()
+    
+    category_filter = st.selectbox("카테고리 필터", ["전체", "뉴스수집", "업로드", "시스템"], index=0)
+    
+    cat_map = {"전체": None, "뉴스수집": "NEWS", "업로드": "UPLOAD", "시스템": "SYSTEM"}
+    logs = get_logs(limit=200, category=cat_map.get(category_filter))
+    
+    if not logs:
+        st.info("로그가 없습니다. 뉴스 수집이나 업로드를 시작하면 로그가 표시됩니다.")
+    else:
+        st.markdown(f"**최근 {len(logs)}개 로그**")
+        
+        log_html = '<div style="background:#f8f8f8; border:1px solid #ddd; border-radius:4px; padding:8px; max-height:500px; overflow-y:auto; font-family:monospace; font-size:11px;">'
+        
+        for log in logs:
+            level = log.get('level', 'INFO')
+            cat = log.get('category', 'SYSTEM')
+            ts = log.get('timestamp', '')
+            msg = log.get('message', '')
+            
+            if level == 'ERROR':
+                color = '#dc3545'
+            elif level == 'WARN':
+                color = '#ffc107'
+            elif level == 'SUCCESS':
+                color = '#28a745'
+            else:
+                color = '#333'
+            
+            cat_badge = '#6c757d'
+            if cat == 'NEWS':
+                cat_badge = '#007bff'
+            elif cat == 'UPLOAD':
+                cat_badge = '#17a2b8'
+            
+            log_html += f'<div style="padding:4px 0; border-bottom:1px solid #eee;">'
+            log_html += f'<span style="color:#888;">{ts}</span> '
+            log_html += f'<span style="background:{cat_badge}; color:#fff; padding:1px 4px; border-radius:2px; font-size:10px;">{cat}</span> '
+            log_html += f'<span style="color:{color};">{msg}</span>'
+            log_html += '</div>'
+        
+        log_html += '</div>'
+        
+        st.markdown(log_html, unsafe_allow_html=True)
+
+
 def render_settings_page():
     st.markdown("# 설정")
     
@@ -506,7 +571,7 @@ def main():
 
     with st.sidebar:
         st.markdown("### 메뉴")
-        page = st.radio("", ["대시보드", "키워드 검색", "뉴스 조회", "프롬프트", "설정"], label_visibility="collapsed")
+        page = st.radio("", ["대시보드", "키워드 검색", "뉴스 조회", "로그", "프롬프트", "설정"], label_visibility="collapsed")
         st.markdown("---")
         if st.button("모든 프로세스 중지", use_container_width=True):
             st.session_state.process_manager.stop_all()
@@ -516,6 +581,7 @@ def main():
         "대시보드": render_main_page,
         "키워드 검색": render_search_page,
         "뉴스 조회": render_news_page,
+        "로그": render_log_page,
         "프롬프트": render_prompt_page,
         "설정": render_settings_page
     }
