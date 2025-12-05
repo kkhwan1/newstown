@@ -157,9 +157,9 @@ def render_main_page():
     category_keywords = cm.get("category_keywords", default={})
     news_config = cm.get("news_collection")
     keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
+    categories = ["연애", "경제", "스포츠"]
 
     col1, col2, col3 = st.columns(3)
-    categories = ["연애", "경제", "스포츠"]
     procs = [
         (PROC_NEWS, "뉴스 수집", NEWS_SCRIPT),
         (PROC_UPLOAD, "업로드 감시", UPLOAD_SCRIPT),
@@ -172,9 +172,6 @@ def render_main_page():
         with col:
             st.markdown(f'<div class="status-box"><b>{name}</b><br><span class="{"status-run" if is_run else "status-stop"}">{"● 실행중" if is_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
             
-            if proc == PROC_NEWS and not is_run:
-                pub_count = st.number_input("발행 개수", min_value=1, max_value=100, value=keywords.get("연애", 15), key="pub_count", label_visibility="collapsed")
-            
             if is_run:
                 if st.button("중지", key=f"stop_{proc}", use_container_width=True):
                     pm.stop_process(proc)
@@ -182,9 +179,6 @@ def render_main_page():
             else:
                 if st.button("시작", key=f"start_{proc}", type="primary", use_container_width=True):
                     if proc == PROC_NEWS:
-                        for cat in categories:
-                            keywords[cat] = pub_count
-                        cm.set("news_collection", "keywords", keywords)
                         config = cm.get_news_config()
                     elif proc == PROC_UPLOAD:
                         config = cm.get_upload_config()
@@ -192,6 +186,28 @@ def render_main_page():
                         config = cm.get_deletion_config()
                     pm.start_process(proc, str(script), config)
                     st.rerun()
+
+    st.markdown("---")
+    
+    news_status = pm.get_status(PROC_NEWS)
+    if not news_status['running']:
+        with st.expander("발행 개수 설정", expanded=True):
+            mode = st.radio("설정 방식", ["전체 동일", "카테고리별"], horizontal=True, key="pub_mode")
+            
+            if mode == "전체 동일":
+                total_count = st.number_input("전체 카테고리 발행 개수", min_value=1, max_value=100, value=keywords.get("연애", 15), key="total_pub")
+                for cat in categories:
+                    keywords[cat] = total_count
+            else:
+                cols = st.columns(3)
+                for idx, cat in enumerate(categories):
+                    with cols[idx]:
+                        keywords[cat] = st.number_input(f"{cat}", min_value=1, max_value=100, value=keywords.get(cat, 15), key=f"pub_{cat}")
+            
+            total_sum = sum(keywords.values())
+            st.caption(f"총 {total_sum}개 뉴스 수집 예정 (연애 {keywords['연애']} + 경제 {keywords['경제']} + 스포츠 {keywords['스포츠']})")
+            
+            cm.set("news_collection", "keywords", keywords)
 
     st.markdown("---")
 
