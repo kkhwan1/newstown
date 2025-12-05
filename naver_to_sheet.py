@@ -1476,7 +1476,9 @@ def main():
         # 목표 개수에 도달했는지 확인
         if len(all_news_items) >= target_count:
             print(f"\n[OK] 목표 개수 달성! 총 {len(all_news_items)}개 중복 없는 뉴스 수집 완료")
-            print(f"   [STAT] 중복 필터링 통계:")
+            print(f"   [STAT] 필터링 통계:")
+            print(f"      - 당일 아닌 뉴스 제외: {total_not_today_count}개")
+            print(f"      - DB 중복 제외: {total_db_duplicate_count}개")
             print(f"      - 스프레드시트 중복 제외: {total_duplicate_count}개")
             print(f"      - 이번 검색 중복 제외: {total_already_collected_count}개")
             break
@@ -1488,7 +1490,9 @@ def main():
     # 최종 통계 출력 (목표 개수에 도달하지 못한 경우에도)
     if len(all_news_items) < target_count:
         print(f"\n[WARN] 목표 개수({target_count}개)에 도달하지 못함 (실제: {len(all_news_items)}개)")
-        print(f"   [STAT] 중복 필터링 통계:")
+        print(f"   [STAT] 필터링 통계:")
+        print(f"      - 당일 아닌 뉴스 제외: {total_not_today_count}개")
+        print(f"      - DB 중복 제외: {total_db_duplicate_count}개")
         print(f"      - 스프레드시트 중복 제외: {total_duplicate_count}개")
         print(f"      - 이번 검색 중복 제외: {total_already_collected_count}개")
     
