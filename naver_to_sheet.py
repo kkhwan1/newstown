@@ -1803,6 +1803,19 @@ def main():
                         sheet.append_rows(batch, value_input_option='RAW')
                         saved_count += len(batch)
                         print(f"   [OK] 배치 {batch_num}/{total_batches} 저장 완료 ({len(batch)}개, 총 {saved_count}/{len(rows_to_save)}개)")
+                        
+                        # 데이터베이스에도 저장
+                        try:
+                            from utils.database import save_news
+                            for row in batch:
+                                save_news(
+                                    title=row[0],
+                                    content=row[1],
+                                    link=row[2],
+                                    category=row[3] if len(row) > 3 else "미분류"
+                                )
+                        except Exception as db_err:
+                            print(f"   [WARN] DB 저장 실패: {db_err}")
 
                         # 배치 간 딜레이 (5초)
                         if batch_end < len(rows_to_save):
