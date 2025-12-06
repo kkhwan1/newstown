@@ -6,11 +6,63 @@ import sys
 import json
 import requests
 import pandas as pd
+import hashlib
 from pathlib import Path
 from bs4 import BeautifulSoup
 
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
+
+# 사용자 계정 정보 (admin: 전체 권한, 일반 사용자: 네이버 API 설정 제외)
+USERS = {
+    "admin": {
+        "password": hashlib.sha256("test1234".encode()).hexdigest(),
+        "role": "admin"
+    },
+    "ksj0070086": {
+        "password": hashlib.sha256("ksj0070086".encode()).hexdigest(),
+        "role": "user"
+    }
+}
+
+
+def check_login(username, password):
+    """로그인 검증"""
+    if username in USERS:
+        hashed = hashlib.sha256(password.encode()).hexdigest()
+        if USERS[username]["password"] == hashed:
+            return True, USERS[username]["role"]
+    return False, None
+
+
+def render_login_page():
+    """로그인 페이지"""
+    st.markdown("# 뉴스 자동화 시스템")
+    st.markdown("---")
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("### 로그인")
+        username = st.text_input("아이디", key="login_username")
+        password = st.text_input("비밀번호", type="password", key="login_password")
+        
+        if st.button("로그인", type="primary", use_container_width=True):
+            if username and password:
+                success, role = check_login(username, password)
+                if success:
+                    st.session_state.logged_in = True
+                    st.session_state.username = username
+                    st.session_state.user_role = role
+                    st.rerun()
+                else:
+                    st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+            else:
+                st.warning("아이디와 비밀번호를 입력해주세요.")
+
+
+def is_admin():
+    """관리자 권한 확인"""
+    return st.session_state.get("user_role") == "admin"
 
 from utils.process_manager import ProcessManager
 from utils.config_manager import ConfigManager
@@ -76,6 +128,12 @@ def save_naver_api(client_id, client_secret):
 
 
 def init_session_state():
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'user_role' not in st.session_state:
+        st.session_state.user_role = None
     if 'process_manager' not in st.session_state:
         st.session_state.process_manager = ProcessManager()
     if 'config_manager' not in st.session_state:
@@ -1131,18 +1189,26 @@ def render_settings_page():
             cm.set("row_deletion", "delete_interval", delete)
             st.success("저장됨")
         
-        st.markdown("### 네이버 API")
-        st.caption("config/naver_api.json 파일에 저장됨")
-        api = load_naver_api()
-        cid = st.text_input("Client ID", value=api.get('client_id', ''))
-        csec = st.text_input("Client Secret", value=api.get('client_secret', ''), type="password")
-        if st.button("저장", key="save_api"):
-            save_naver_api(cid, csec)
-            st.success("저장됨")
+        # 네이버 API 설정 (관리자만 표시)
+        if is_admin():
+            st.markdown("### 네이버 API")
+            st.caption("config/naver_api.json 파일에 저장됨")
+            api = load_naver_api()
+            cid = st.text_input("Client ID", value=api.get('client_id', ''))
+            csec = st.text_input("Client Secret", value=api.get('client_secret', ''), type="password")
+            if st.button("저장", key="save_api"):
+                save_naver_api(cid, csec)
+                st.success("저장됨")
 
 
 def main():
     init_session_state()
+    
+    # 로그인 체크
+    if not st.session_state.logged_in:
+        render_login_page()
+        return
+    
     init_database()
     
     cm = st.session_state.config_manager
@@ -1153,6 +1219,13 @@ def main():
     check_scheduled_news_collection()
 
     with st.sidebar:
+        st.markdown(f"**{st.session_state.username}** 님")
+        if st.button("로그아웃", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.username = None
+            st.session_state.user_role = None
+            st.rerun()
+        st.markdown("---")
         st.markdown("### 메뉴")
         page = st.radio("페이지 선택", ["대시보드", "키워드 검색", "뉴스 조회", "로그", "프롬프트", "설정"], label_visibility="collapsed")
         st.markdown("---")
