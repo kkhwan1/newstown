@@ -37,7 +37,7 @@ def check_login(username, password):
 
 def render_login_page():
     """로그인 페이지"""
-    st.markdown("# 뉴스 자동화 시스템")
+    st.markdown("# 뉴스타운 자동화 시스템")
     st.markdown("---")
     
     col1, col2, col3 = st.columns([1, 2, 1])
