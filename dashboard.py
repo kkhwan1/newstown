@@ -122,26 +122,103 @@ def search_naver_news(keyword, display=10, sort="date"):
         return None, str(e)
 
 
+def normalize_text_for_dup(text):
+    """텍스트 정규화 (중복 체크용)"""
+    import re
+    if not text:
+        return ""
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = text.strip().lower()
+    text = re.sub(r'[^\w\s가-힣]', '', text)
+    return text
+
+def calculate_similarity_for_dup(text1, text2):
+    """두 텍스트의 유사도 계산"""
+    from difflib import SequenceMatcher
+    if not text1 or not text2:
+        return 0.0
+    norm1 = normalize_text_for_dup(text1)
+    norm2 = normalize_text_for_dup(text2)
+    if not norm1 or not norm2:
+        return 0.0
+    if norm1 == norm2:
+        return 1.0
+    return SequenceMatcher(None, norm1, norm2).ratio()
+
+def extract_key_phrases_for_dup(text):
+    """핵심 키워드/구절 추출"""
+    if not text:
+        return set()
+    normalized = normalize_text_for_dup(text)
+    words = normalized.split()
+    key_words = set(w for w in words if len(w) >= 2)
+    for i in range(len(words) - 1):
+        if len(words[i]) >= 2 and len(words[i+1]) >= 2:
+            key_words.add(words[i] + words[i+1])
+    return key_words
+
+def is_duplicate_news(new_title, existing_titles, threshold=0.55):
+    """중복 뉴스 체크 (유사도 55% 또는 키워드 70%)"""
+    if not existing_titles:
+        return False
+    
+    new_normalized = normalize_text_for_dup(new_title)
+    new_phrases = extract_key_phrases_for_dup(new_title)
+    
+    for existing_title in existing_titles:
+        existing_normalized = normalize_text_for_dup(existing_title)
+        
+        # 1. 완전 일치 체크
+        if new_normalized == existing_normalized:
+            return True
+        
+        # 2. 유사도 55% 이상이면 중복
+        similarity = calculate_similarity_for_dup(new_title, existing_title)
+        if similarity >= threshold:
+            return True
+        
+        # 3. 핵심 키워드 70% 이상 겹치면 중복
+        existing_phrases = extract_key_phrases_for_dup(existing_title)
+        if new_phrases and existing_phrases:
+            common = new_phrases.intersection(existing_phrases)
+            smaller = min(len(new_phrases), len(existing_phrases))
+            if smaller > 0 and len(common) / smaller >= 0.7:
+                return True
+    
+    return False
+
 def save_news_to_db_and_sheet(news_list, category, search_keyword=None):
-    """뉴스를 DB와 구글 시트에 저장
+    """뉴스를 DB와 구글 시트에 저장 (중복 체크 포함)
     
     Args:
         news_list: 저장할 뉴스 목록
         category: 대분류 카테고리 (연애/경제/스포츠)
         search_keyword: 검색에 사용된 키워드
     """
-    from utils.database import save_news
+    from utils.database import save_news, get_connection
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
     
     cm = st.session_state.config_manager
     sheet_url = cm.get("google_sheet", "url", "")
-    saved = 0
     
-    for n in news_list:
-        if save_news(n['title'], n['content'], n['link'], category, search_keyword=search_keyword):
-            saved += 1
+    # 1. DB에서 기존 제목들 로드
+    existing_db_titles = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT title FROM news")
+        existing_db_titles = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+    except Exception as e:
+        st.warning(f"DB 조회 오류: {e}")
     
+    # 2. 시트에서 기존 제목들 로드
+    existing_sheet_titles = []
+    existing_sheet_links = set()
+    sheet = None
     if sheet_url:
         try:
             creds_path = current_dir / 'credentials.json'
@@ -150,9 +227,56 @@ def save_news_to_db_and_sheet(news_list, category, search_keyword=None):
                 creds = ServiceAccountCredentials.from_json_keyfile_name(str(creds_path), scope)
                 client = gspread.authorize(creds)
                 sheet = client.open_by_url(sheet_url).sheet1
-                rows = [[n['title'], n['content'], n['link'], category] for n in news_list]
-                if rows:
-                    sheet.append_rows(rows, value_input_option='RAW')
+                all_values = sheet.get_all_values()
+                for row in all_values[1:]:  # 헤더 제외
+                    if len(row) > 0 and row[0]:
+                        existing_sheet_titles.append(row[0])
+                    if len(row) > 2 and row[2]:
+                        existing_sheet_links.add(row[2])
+        except Exception as e:
+            st.warning(f"시트 조회 오류: {e}")
+    
+    # 3. 기존 제목 합치기
+    all_existing_titles = list(set(existing_db_titles + existing_sheet_titles))
+    
+    # 4. 중복 필터링
+    filtered_news = []
+    skipped_count = 0
+    saved_titles = []  # 이번에 저장된 제목들 (중복 방지)
+    
+    for n in news_list:
+        link = n.get('link', '')
+        title = n.get('title', '')
+        
+        # 링크 중복 체크
+        if link in existing_sheet_links:
+            skipped_count += 1
+            continue
+        
+        # 기존 + 이번 저장 제목들과 중복 체크
+        combined_titles = all_existing_titles + saved_titles
+        if is_duplicate_news(title, combined_titles, 0.55):
+            skipped_count += 1
+            continue
+        
+        filtered_news.append(n)
+        saved_titles.append(title)
+        existing_sheet_links.add(link)
+    
+    if skipped_count > 0:
+        st.info(f"중복 뉴스 {skipped_count}개 제외됨")
+    
+    # 5. 필터링된 뉴스 저장
+    saved = 0
+    for n in filtered_news:
+        if save_news(n['title'], n['content'], n['link'], category, search_keyword=search_keyword):
+            saved += 1
+    
+    # 6. 시트에 배치 저장
+    if sheet and filtered_news:
+        try:
+            rows = [[n['title'], n['content'], n['link'], category] for n in filtered_news]
+            sheet.append_rows(rows, value_input_option='RAW')
         except Exception as e:
             st.warning(f"시트 저장 오류: {e}")
     
