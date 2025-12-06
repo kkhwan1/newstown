@@ -112,7 +112,7 @@ SITE_PW = "love1105()"
 AUTO_UPLOAD_TO_NEWSTOWN = False  # False면 구글 시트에만 저장 (뉴스타운 업로드 안 함)
 
 # 7. 카테고리 불일치 정책
-SKIP_MISMATCHED_CATEGORY = True  # True: 카테고리 불일치 시 저장 건너뛰기
+SKIP_MISMATCHED_CATEGORY = False  # False: 카테고리 불일치 시에도 검색 키워드 기반 카테고리로 저장
                                   # False: 경고만 출력하고 저장 (기존 동작)
 
 # 8. 경제 카테고리 활성화
