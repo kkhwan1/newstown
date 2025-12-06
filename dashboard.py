@@ -194,6 +194,21 @@ def render_main_page():
                 pm.start_process(PROC_DELETION, str(DELETION_SCRIPT), config)
                 st.rerun()
 
+    with st.expander("실행 로그", expanded=False):
+        log_tabs = st.tabs(["업로드 감시", "완료행 삭제"])
+        with log_tabs[0]:
+            upload_logs = pm.get_logs(PROC_UPLOAD, lines=30)
+            if upload_logs:
+                st.code(upload_logs, language="text")
+            else:
+                st.caption("로그가 없습니다")
+        with log_tabs[1]:
+            del_logs = pm.get_logs(PROC_DELETION, lines=30)
+            if del_logs:
+                st.code(del_logs, language="text")
+            else:
+                st.caption("로그가 없습니다")
+
     st.markdown("---")
     
     st.markdown("### 뉴스 수집")
@@ -204,7 +219,8 @@ def render_main_page():
     
     col_n1, col_n2 = st.columns([2, 1])
     with col_n1:
-        st.markdown(f'<div class="status-box"><b>뉴스 수집</b><br><span class="{"status-run" if is_news_run else "status-stop"}">{"● 실행중" if is_news_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
+        runtime_str = f" ({news_status['runtime']})" if news_status.get('runtime') else ""
+        st.markdown(f'<div class="status-box"><b>뉴스 수집</b><br><span class="{"status-run" if is_news_run else "status-stop"}">{"● 실행중" + runtime_str if is_news_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
     with col_n2:
         if is_news_run:
             if st.button("중지", key="stop_news_main", use_container_width=True):
@@ -216,10 +232,24 @@ def render_main_page():
                 pm.start_process(PROC_NEWS, str(NEWS_SCRIPT), config)
                 st.rerun()
 
+    if is_news_run:
+        with st.expander("수집 로그", expanded=True):
+            news_logs = pm.get_logs(PROC_NEWS, lines=50)
+            if news_logs:
+                st.code(news_logs, language="text")
+            else:
+                st.caption("로그가 없습니다")
+            if st.button("새로고침", key="refresh_news_log"):
+                st.rerun()
+
     st.markdown("---")
     
     news_status = pm.get_status(PROC_NEWS)
     if not news_status['running']:
+        with st.expander("수집 설정", expanded=True):
+            sort_option = st.radio("정렬 방식", ["인기순", "최신순"], horizontal=True, key="sort_option", help="인기순: 관심도 높은 뉴스 / 최신순: 최근 발행 뉴스")
+            cm.set("news_collection", "sort", "sim" if sort_option == "인기순" else "date")
+            
         with st.expander("발행 개수 설정", expanded=True):
             mode = st.radio("설정 방식", ["전체 동일", "카테고리별"], horizontal=True, key="pub_mode")
             
