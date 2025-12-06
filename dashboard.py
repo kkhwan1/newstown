@@ -538,17 +538,43 @@ def render_news_page():
             if news_list:
                 st.caption(f"총 {len(news_list)}개 뉴스")
                 
-                for idx, n in enumerate(news_list):
-                    col1, col2 = st.columns([0.9, 0.1])
-                    with col1:
-                        with st.expander(f"**{n.get('title', '')[:60]}...** | {n.get('category', '-')} | {str(n.get('created_at', ''))[:10]}"):
-                            st.markdown(f"**제목**: {n.get('title', '')}")
-                            st.markdown(f"**카테고리**: {n.get('category', '-')} | **검색어**: {n.get('search_keyword', '-')}")
-                            st.caption(n.get('content', '')[:300] + "...")
-                            st.markdown(f"[원문 링크]({n.get('link', '')})")
-                    with col2:
-                        if st.button("🗑️", key=f"del_pending_{n['id']}", help="삭제"):
-                            if delete_news_from_db_and_sheet(n['id'], n.get('link', '')):
+                # 표 형태로 데이터 표시
+                table_data = []
+                for n in news_list:
+                    table_data.append({
+                        "ID": n['id'],
+                        "제목": n.get('title', '')[:50] + "...",
+                        "카테고리": n.get('category', '-'),
+                        "검색어": n.get('search_keyword', '-') or '-',
+                        "수집일": str(n.get('created_at', ''))[:10]
+                    })
+                
+                st.dataframe(
+                    pd.DataFrame(table_data),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "ID": st.column_config.NumberColumn("ID", width="small"),
+                        "제목": st.column_config.TextColumn("제목", width="large"),
+                        "카테고리": st.column_config.TextColumn("카테고리", width="small"),
+                        "검색어": st.column_config.TextColumn("검색어", width="small"),
+                        "수집일": st.column_config.TextColumn("수집일", width="small")
+                    }
+                )
+                
+                # 개별 삭제 영역
+                with st.expander("개별 삭제 / 상세보기"):
+                    selected_id = st.selectbox("뉴스 선택 (ID)", [n['id'] for n in news_list], format_func=lambda x: f"ID {x}: {next((n.get('title', '')[:40] for n in news_list if n['id'] == x), '')}")
+                    selected_news = next((n for n in news_list if n['id'] == selected_id), None)
+                    
+                    if selected_news:
+                        st.markdown(f"**제목**: {selected_news.get('title', '')}")
+                        st.markdown(f"**카테고리**: {selected_news.get('category', '-')} | **검색어**: {selected_news.get('search_keyword', '-')}")
+                        st.caption(selected_news.get('content', '')[:300] + "...")
+                        st.markdown(f"[원문 링크]({selected_news.get('link', '')})")
+                        
+                        if st.button("이 뉴스 삭제", key="del_selected_pending", type="secondary"):
+                            if delete_news_from_db_and_sheet(selected_news['id'], selected_news.get('link', '')):
                                 st.success("삭제됨")
                                 st.rerun()
             else:
@@ -570,18 +596,42 @@ def render_news_page():
             if uploaded_list:
                 st.caption(f"총 {len(uploaded_list)}개 업로드됨")
                 
-                for idx, n in enumerate(uploaded_list):
-                    col1, col2 = st.columns([0.9, 0.1])
-                    with col1:
-                        uploaded_at = str(n.get('uploaded_at', ''))[:16] if n.get('uploaded_at') else '-'
-                        with st.expander(f"**{n.get('title', '')[:60]}...** | {n.get('category', '-')} | 업로드: {uploaded_at}"):
-                            st.markdown(f"**제목**: {n.get('title', '')}")
-                            st.markdown(f"**카테고리**: {n.get('category', '-')} | **검색어**: {n.get('search_keyword', '-')}")
-                            st.markdown(f"**업로드 시간**: {uploaded_at}")
-                            st.caption(n.get('content', '')[:300] + "...")
-                    with col2:
-                        if st.button("🗑️", key=f"del_uploaded_{n['id']}", help="삭제"):
-                            if delete_news_from_db_and_sheet(n['id'], n.get('link', '')):
+                # 표 형태로 데이터 표시
+                table_data2 = []
+                for n in uploaded_list:
+                    uploaded_at = str(n.get('uploaded_at', ''))[:16] if n.get('uploaded_at') else '-'
+                    table_data2.append({
+                        "ID": n['id'],
+                        "제목": n.get('title', '')[:50] + "...",
+                        "카테고리": n.get('category', '-'),
+                        "업로드일": uploaded_at
+                    })
+                
+                st.dataframe(
+                    pd.DataFrame(table_data2),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "ID": st.column_config.NumberColumn("ID", width="small"),
+                        "제목": st.column_config.TextColumn("제목", width="large"),
+                        "카테고리": st.column_config.TextColumn("카테고리", width="small"),
+                        "업로드일": st.column_config.TextColumn("업로드일", width="medium")
+                    }
+                )
+                
+                # 개별 삭제 영역
+                with st.expander("개별 삭제 / 상세보기"):
+                    selected_id2 = st.selectbox("뉴스 선택 (ID)", [n['id'] for n in uploaded_list], format_func=lambda x: f"ID {x}: {next((n.get('title', '')[:40] for n in uploaded_list if n['id'] == x), '')}", key="sel_uploaded")
+                    selected_news2 = next((n for n in uploaded_list if n['id'] == selected_id2), None)
+                    
+                    if selected_news2:
+                        uploaded_at2 = str(selected_news2.get('uploaded_at', ''))[:16] if selected_news2.get('uploaded_at') else '-'
+                        st.markdown(f"**제목**: {selected_news2.get('title', '')}")
+                        st.markdown(f"**카테고리**: {selected_news2.get('category', '-')} | **업로드 시간**: {uploaded_at2}")
+                        st.caption(selected_news2.get('content', '')[:300] + "...")
+                        
+                        if st.button("이 뉴스 삭제", key="del_selected_uploaded", type="secondary"):
+                            if delete_news_from_db_and_sheet(selected_news2['id'], selected_news2.get('link', '')):
                                 st.success("삭제됨")
                                 st.rerun()
             else:
