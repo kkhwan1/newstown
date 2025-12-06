@@ -107,6 +107,11 @@ def apply_config(config):
         naver_to_sheet.NAVER_CLIENT_ID = config['naver_client_id']
     if 'naver_client_secret' in config:
         naver_to_sheet.NAVER_CLIENT_SECRET = config['naver_client_secret']
+    
+    if 'sort' in config:
+        naver_to_sheet.SORT_OPTION = config['sort']
+        sort_name = "인기순" if config['sort'] == 'sim' else "최신순"
+        log(f"정렬 방식: {sort_name}")
 
 def main():
     """메인 실행 함수"""

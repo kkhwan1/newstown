@@ -119,6 +119,9 @@ SKIP_MISMATCHED_CATEGORY = False  # False: 카테고리 불일치 시에도 검�
 ENABLE_ECONOMY_CATEGORY = True   # True: 경제 뉴스도 수집
                                   # False: 연애/스포츠만 수집 (기존 동작)
 
+# 9. 정렬 옵션
+SORT_OPTION = 'sim'  # 'sim': 인기순(관련도순), 'date': 최신순
+
 # ==========================================
 
 def get_naver_news(keyword, display=20, sort='date'):
@@ -1415,7 +1418,7 @@ def main():
                 continue
             
             print(f"   '{keyword}' 키워드로 추가 검색 중... (현재: {len(all_news_items)}/{target_count}개)")
-            news_result = get_naver_news(keyword, display=search_count, sort='sim')
+            news_result = get_naver_news(keyword, display=search_count, sort=SORT_OPTION)
             
             if news_result and 'items' in news_result:
                 new_items_count = 0
@@ -1608,7 +1611,7 @@ def main():
                     
                     # 더 많은 뉴스 검색
                     search_count = min(count * 5, 100)
-                    news_result = get_naver_news(keyword, display=search_count, sort='sim')
+                    news_result = get_naver_news(keyword, display=search_count, sort=SORT_OPTION)
                     
                     if news_result and 'items' in news_result:
                         for item in news_result['items']:
