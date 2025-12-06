@@ -1883,8 +1883,9 @@ def main():
                 while retry_count < max_retries:
                     try:
                         # 배치 저장 (append_rows 사용) - A~D열만 저장 (E열 검색키워드 제외)
+                        # table_range='A:D'로 A열부터 시작하도록 고정
                         sheet_batch = [[row[0], row[1], row[2], row[3]] for row in batch]
-                        sheet.append_rows(sheet_batch, value_input_option='RAW')
+                        sheet.append_rows(sheet_batch, value_input_option='RAW', table_range='A:D')
                         saved_count += len(batch)
                         print(f"   [OK] 배치 {batch_num}/{total_batches} 저장 완료 ({len(batch)}개, 총 {saved_count}/{len(rows_to_save)}개)")
                         

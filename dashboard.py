@@ -315,11 +315,11 @@ def save_news_to_db_and_sheet(news_list, category, search_keyword=None):
         if save_news(n['title'], n['content'], n['link'], category, search_keyword=search_keyword):
             saved += 1
     
-    # 6. 시트에 배치 저장
+    # 6. 시트에 배치 저장 (A~D열에 고정)
     if sheet and filtered_news:
         try:
             rows = [[n['title'], n['content'], n['link'], category] for n in filtered_news]
-            sheet.append_rows(rows, value_input_option='RAW')
+            sheet.append_rows(rows, value_input_option='RAW', table_range='A:D')
         except Exception as e:
             st.warning(f"시트 저장 오류: {e}")
     
