@@ -4,6 +4,7 @@
 JSON 기반 설정 영속화 및 기본값 관리
 .env 파일 지원으로 민감한 정보 분리
 """
+import copy
 import json
 import os
 from typing import Any, Dict, Optional
@@ -198,7 +199,7 @@ class ConfigManager:
             print(f"❌ 설정 파일 저장 실패: {e}")
 
     def get(self, section: str, key: Optional[str] = None, default: Any = None) -> Any:
-        """설정 값 조회
+        """설정 값 조회 (복사본 반환으로 내부 상태 보호)
 
         Args:
             section: 섹션 이름 (예: 'news_collection')
@@ -206,19 +207,27 @@ class ConfigManager:
             default: 기본값
 
         Returns:
-            설정 값 또는 기본값
+            설정 값 또는 기본값 (딕셔너리/리스트는 복사본 반환)
         """
         section_data = self._config.get(section, self.DEFAULT_CONFIG.get(section, {}))
 
         if key is None:
-            return section_data
+            # 섹션 전체 반환 시 deepcopy로 내부 상태 보호
+            return copy.deepcopy(section_data)
 
         # 섹션 데이터에서 키 조회, 없으면 기본 설정에서 조회
         if key in section_data:
-            return section_data[key]
+            value = section_data[key]
+            # 딕셔너리나 리스트인 경우 복사본 반환
+            if isinstance(value, (dict, list)):
+                return copy.deepcopy(value)
+            return value
 
         default_section = self.DEFAULT_CONFIG.get(section, {})
-        return default_section.get(key, default)
+        value = default_section.get(key, default)
+        if isinstance(value, (dict, list)):
+            return copy.deepcopy(value)
+        return value
 
     def set(self, section: str, key: str, value: Any, save: bool = True):
         """설정 값 저장
@@ -251,8 +260,8 @@ class ConfigManager:
             self._save()
 
     def get_all(self) -> Dict[str, Any]:
-        """전체 설정 반환"""
-        return self._config.copy()
+        """전체 설정 반환 (복사본 반환)"""
+        return copy.deepcopy(self._config)
 
     def reset_to_default(self, section: Optional[str] = None, save: bool = True):
         """기본값으로 초기화
@@ -277,18 +286,16 @@ class ConfigManager:
     # 편의 메서드들
     def get_news_config(self) -> Dict[str, Any]:
         """뉴스 수집 설정 반환 (복사본 반환)"""
-        import copy
-        config = copy.deepcopy(self.get("news_collection"))
+        config = self.get("news_collection")
         config['sheet_url'] = self.get("google_sheet", "url")
         config['naver_client_id'] = self.get("naver_api", "client_id")
         config['naver_client_secret'] = self.get("naver_api", "client_secret")
-        config['category_keywords'] = copy.deepcopy(self.get("category_keywords") or {})
+        config['category_keywords'] = self.get("category_keywords") or {}
         return config
 
     def get_upload_config(self) -> Dict[str, Any]:
         """업로드 감시 설정 반환 (복사본 반환)"""
-        import copy
-        config = copy.deepcopy(self.get("upload_monitor"))
+        config = self.get("upload_monitor")
         config['sheet_url'] = self.get("google_sheet", "url")
         config['site_id'] = self.get("newstown", "site_id")
         config['site_pw'] = self.get("newstown", "site_pw")
@@ -296,8 +303,7 @@ class ConfigManager:
 
     def get_deletion_config(self) -> Dict[str, Any]:
         """행 삭제 설정 반환 (복사본 반환)"""
-        import copy
-        config = copy.deepcopy(self.get("row_deletion"))
+        config = self.get("row_deletion")
         config['sheet_url'] = self.get("google_sheet", "url")
         config['completed_column'] = self.get("upload_monitor", "completed_column")
         return config
