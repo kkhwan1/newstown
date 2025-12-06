@@ -425,23 +425,36 @@ def render_search_page():
     if st.session_state.search_results:
         st.markdown("---")
         
-        c1, c2, c3 = st.columns([1, 1, 4])
+        save_category = st.session_state.get('current_search_category', category)
+        save_keyword = st.session_state.get('current_search_keyword', '')
+        
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
         with c1:
-            if st.button("전체 선택"):
-                st.session_state.selected_news = set(range(len(st.session_state.search_results)))
+            if st.button("전체 선택 + 저장", type="primary"):
+                all_news = st.session_state.search_results
+                saved = save_news_to_db_and_sheet(all_news, save_category, search_keyword=save_keyword)
+                st.success(f"전체 {saved}개 저장 완료! (카테고리: {save_category})")
+                st.session_state.search_results = []
+                st.session_state.selected_news = set()
                 st.rerun()
         with c2:
+            select_all = st.button("전체 선택")
+        with c3:
             if st.button("선택 해제"):
                 st.session_state.selected_news = set()
                 st.rerun()
         
+        if select_all:
+            st.session_state.selected_news = set(range(len(st.session_state.search_results)))
+        
         for idx, news in enumerate(st.session_state.search_results):
             c1, c2 = st.columns([0.05, 0.95])
             with c1:
-                sel = st.checkbox("", value=idx in st.session_state.selected_news, key=f"s{idx}", label_visibility="collapsed")
-                if sel:
+                is_selected = idx in st.session_state.selected_news
+                sel = st.checkbox("", value=is_selected, key=f"s{idx}", label_visibility="collapsed")
+                if sel and idx not in st.session_state.selected_news:
                     st.session_state.selected_news.add(idx)
-                else:
+                elif not sel and idx in st.session_state.selected_news:
                     st.session_state.selected_news.discard(idx)
             with c2:
                 st.markdown(f'<div class="search-item"><b>{news["title"]}</b><br><small>{news["content"][:100]}...</small></div>', unsafe_allow_html=True)
@@ -449,8 +462,6 @@ def render_search_page():
         selected_count = len(st.session_state.selected_news)
         if selected_count > 0:
             st.markdown("---")
-            save_category = st.session_state.get('current_search_category', category)
-            save_keyword = st.session_state.get('current_search_keyword', '')
             st.caption(f"저장 대상: {save_category} 카테고리, 검색어: {save_keyword}")
             if st.button(f"선택한 {selected_count}개 저장", type="primary"):
                 selected = [st.session_state.search_results[i] for i in st.session_state.selected_news]
@@ -460,6 +471,7 @@ def render_search_page():
                 st.session_state.selected_news = set()
                 st.session_state.current_search_keyword = ''
                 st.session_state.current_search_category = ''
+                st.rerun()
 
 
 def render_prompt_page():
