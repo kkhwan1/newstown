@@ -83,6 +83,10 @@ def init_session_state():
         st.session_state.search_results = []
     if 'selected_news' not in st.session_state:
         st.session_state.selected_news = set()
+    if 'current_search_keyword' not in st.session_state:
+        st.session_state.current_search_keyword = ''
+    if 'current_search_category' not in st.session_state:
+        st.session_state.current_search_category = ''
 
 
 def init_database():
@@ -118,7 +122,14 @@ def search_naver_news(keyword, display=10, sort="date"):
         return None, str(e)
 
 
-def save_news_to_db_and_sheet(news_list, category):
+def save_news_to_db_and_sheet(news_list, category, search_keyword=None):
+    """뉴스를 DB와 구글 시트에 저장
+    
+    Args:
+        news_list: 저장할 뉴스 목록
+        category: 대분류 카테고리 (연애/경제/스포츠)
+        search_keyword: 검색에 사용된 키워드
+    """
     from utils.database import save_news
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
@@ -128,7 +139,7 @@ def save_news_to_db_and_sheet(news_list, category):
     saved = 0
     
     for n in news_list:
-        if save_news(n['title'], n['content'], n['link'], category):
+        if save_news(n['title'], n['content'], n['link'], category, search_keyword=search_keyword):
             saved += 1
     
     if sheet_url:
@@ -139,7 +150,7 @@ def save_news_to_db_and_sheet(news_list, category):
                 creds = ServiceAccountCredentials.from_json_keyfile_name(str(creds_path), scope)
                 client = gspread.authorize(creds)
                 sheet = client.open_by_url(sheet_url).sheet1
-                rows = [[n['title'], n['content'], n['link'], category] for n in news_list]
+                rows = [[n['title'], n['content'], n['link'], category, search_keyword or ''] for n in news_list]
                 if rows:
                     sheet.append_rows(rows, value_input_option='RAW')
         except Exception as e:
@@ -339,7 +350,8 @@ def render_news_page():
                 for n in news_list:
                     data.append({
                         "제목": n.get('title', '')[:50] + "...",
-                        "카테고리": n.get('category', '-'),
+                        "대분류": n.get('category', '-'),
+                        "검색어": n.get('search_keyword', '-'),
                         "수집일": str(n.get('created_at', ''))[:10]
                     })
                 st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
@@ -370,7 +382,8 @@ def render_news_page():
                 for n in uploaded_list:
                     data.append({
                         "제목": n.get('title', '')[:50] + "...",
-                        "카테고리": n.get('category', '-'),
+                        "대분류": n.get('category', '-'),
+                        "검색어": n.get('search_keyword', '-'),
                         "업로드일": str(n.get('uploaded_at', ''))[:10] if n.get('uploaded_at') else '-'
                     })
                 st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
@@ -404,6 +417,8 @@ def render_search_page():
             elif results:
                 st.session_state.search_results = results
                 st.session_state.selected_news = set()
+                st.session_state.current_search_keyword = keyword
+                st.session_state.current_search_category = category
             else:
                 st.warning("결과 없음")
 
@@ -434,12 +449,17 @@ def render_search_page():
         selected_count = len(st.session_state.selected_news)
         if selected_count > 0:
             st.markdown("---")
+            save_category = st.session_state.get('current_search_category', category)
+            save_keyword = st.session_state.get('current_search_keyword', '')
+            st.caption(f"저장 대상: {save_category} 카테고리, 검색어: {save_keyword}")
             if st.button(f"선택한 {selected_count}개 저장", type="primary"):
                 selected = [st.session_state.search_results[i] for i in st.session_state.selected_news]
-                saved = save_news_to_db_and_sheet(selected, category)
-                st.success(f"{saved}개 저장됨")
+                saved = save_news_to_db_and_sheet(selected, save_category, search_keyword=save_keyword)
+                st.success(f"{saved}개 저장됨 (대분류: {save_category}, 검색어: {save_keyword})")
                 st.session_state.search_results = []
                 st.session_state.selected_news = set()
+                st.session_state.current_search_keyword = ''
+                st.session_state.current_search_category = ''
 
 
 def render_prompt_page():
