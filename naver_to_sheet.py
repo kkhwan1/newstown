@@ -1133,31 +1133,109 @@ def extract_key_phrases(text):
             key_words.add(words[i] + words[i+1])
     return key_words
 
-def is_duplicate_in_db(new_title, db_titles, threshold=0.55):
-    """DB 제목과 유사도 55% 이상이면 중복 판정 (더 엄격). (중복여부, 유사도, 매칭제목) 반환"""
+
+def extract_proper_nouns(text):
+    """고유명사(인물명, 기관명 등) 추출 - 중복 체크 강화용"""
+    if not text:
+        return set()
+    
+    proper_nouns = set()
+    
+    # 1. 따옴표 안의 인물명/작품명 추출 ('아이유', "손흥민" 등)
+    quoted = re.findall(r"['\"]([가-힣a-zA-Z]{2,10})['\"]", text)
+    for q in quoted:
+        if len(q) >= 2:
+            proper_nouns.add(q)
+    
+    # 2. 한글 2-4글자 이름 패턴 (성+이름)
+    # 일반적인 한국인 이름 패턴
+    name_pattern = re.findall(r'([가-힣]{2,4})(?:\s*씨|\s*선수|\s*감독|\s*대표|\s*의원|\s*장관|\s*사장|\s*회장|\s*아나운서|\s*기자)', text)
+    for name in name_pattern:
+        proper_nouns.add(name)
+    
+    # 3. '~가', '~은', '~이' 앞의 2-3글자 이름 (주어 위치)
+    subject_names = re.findall(r'([가-힣]{2,3})(?:가|은|이|의|와|과)\s', text)
+    for name in subject_names:
+        # 일반 명사 제외
+        common_words = {'오늘', '내일', '어제', '뉴스', '기사', '사진', '영상', '관련', '최근', '현재', '앞서', '이후', '경기', '대회'}
+        if name not in common_words and len(name) >= 2:
+            proper_nouns.add(name)
+    
+    # 4. 드라마/프로그램 제목 패턴
+    drama_pattern = re.findall(r"['\"]([가-힣a-zA-Z0-9\s]{2,20})['\"]", text)
+    for title in drama_pattern:
+        title = title.strip()
+        if 2 <= len(title) <= 15:
+            proper_nouns.add(title)
+    
+    # 5. 알파벳+숫자 조합 (예: AAA, MVP, KBO 등)
+    abbrev = re.findall(r'\b([A-Z]{2,5})\b', text)
+    for a in abbrev:
+        proper_nouns.add(a)
+    
+    return proper_nouns
+
+
+def is_same_topic(title1, content1, title2, content2):
+    """같은 주제/인물에 대한 기사인지 확인"""
+    # 고유명사 추출
+    nouns1 = extract_proper_nouns(title1 + " " + (content1 or ""))
+    nouns2 = extract_proper_nouns(title2 + " " + (content2 or ""))
+    
+    if not nouns1 or not nouns2:
+        return False
+    
+    # 공통 고유명사가 있으면 같은 주제
+    common_nouns = nouns1.intersection(nouns2)
+    if common_nouns:
+        # 공통 고유명사가 2개 이상이거나, 1개라도 주요 인물명(2-4글자 한글)이면 같은 주제
+        for noun in common_nouns:
+            if re.match(r'^[가-힣]{2,4}$', noun):  # 인물명으로 추정
+                return True
+            if len(common_nouns) >= 2:  # 2개 이상 공통 고유명사
+                return True
+    
+    return False
+
+def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None, threshold=0.40):
+    """DB 제목/본문과 유사도 40% 이상이면 중복 판정 (더 엄격). (중복여부, 유사도, 매칭제목) 반환"""
     if not db_titles:
         return (False, 0.0, None)
     
     new_normalized = normalize_text(new_title)
     new_key_phrases = extract_key_phrases(new_title)
     
-    for title in db_titles:
+    for i, title in enumerate(db_titles):
         existing_normalized = normalize_text(title)
         
-        # 1. SequenceMatcher 유사도 체크
+        # 1. SequenceMatcher 유사도 체크 (40% 이상이면 중복)
         ratio = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
         if ratio >= threshold:
             return (True, ratio, title)
         
-        # 2. 핵심 키워드 중복률 체크 (70% 이상 키워드 겹치면 중복)
+        # 2. 핵심 키워드 중복률 체크 (50% 이상 키워드 겹치면 중복)
         existing_key_phrases = extract_key_phrases(title)
         if new_key_phrases and existing_key_phrases:
             common = new_key_phrases.intersection(existing_key_phrases)
             smaller_set = min(len(new_key_phrases), len(existing_key_phrases))
             if smaller_set > 0:
                 keyword_overlap = len(common) / smaller_set
-                if keyword_overlap >= 0.7:
+                if keyword_overlap >= 0.5:
                     return (True, keyword_overlap, title)
+        
+        # 3. 고유명사 기반 같은 주제 체크
+        existing_content = db_contents[i] if db_contents and i < len(db_contents) else None
+        if is_same_topic(new_title, new_content, title, existing_content):
+            return (True, 0.5, title)
+        
+        # 4. 본문 유사도 체크 (50% 이상이면 중복)
+        if new_content and existing_content:
+            content_similarity = calculate_similarity(
+                normalize_text(new_content[:500]),  # 앞부분 500자만 비교 (성능)
+                normalize_text(existing_content[:500])
+            )
+            if content_similarity >= 0.5:
+                return (True, content_similarity, title)
     
     return (False, 0.0, None)
 
@@ -1219,8 +1297,8 @@ def load_existing_news(sheet):
     
     return {'links': set(), 'titles': [], 'normalized_titles': []}
 
-def check_duplicate_in_cache(existing_data, link, title=None):
-    """캐시된 기존 뉴스 데이터와 비교하여 중복 확인"""
+def check_duplicate_in_cache(existing_data, link, title=None, content=None):
+    """캐시된 기존 뉴스 데이터와 비교하여 중복 확인 (강화된 버전)"""
     if not existing_data:
         return False
     
@@ -1237,19 +1315,26 @@ def check_duplicate_in_cache(existing_data, link, title=None):
             return True
         
         # 제목 유사도 체크
-        for existing_title, normalized_existing_title in zip(existing_data['titles'], existing_data['normalized_titles']):
+        new_phrases = extract_key_phrases(title)
+        for i, (existing_title, normalized_existing_title) in enumerate(zip(existing_data['titles'], existing_data['normalized_titles'])):
             similarity = calculate_similarity(normalized_new_title, normalized_existing_title)
-            # 유사도가 0.55 이상이면 중복으로 간주 (더 엄격)
-            if similarity >= 0.55:
+            # 유사도가 0.40 이상이면 중복으로 간주 (더 엄격)
+            if similarity >= 0.40:
                 return True
-            # 핵심 키워드 중복률 체크 추가
-            new_phrases = extract_key_phrases(title)
+            
+            # 핵심 키워드 중복률 체크 (50% 이상이면 중복)
             existing_phrases = extract_key_phrases(existing_title)
             if new_phrases and existing_phrases:
                 common = new_phrases.intersection(existing_phrases)
                 smaller = min(len(new_phrases), len(existing_phrases))
-                if smaller > 0 and len(common) / smaller >= 0.7:
+                if smaller > 0 and len(common) / smaller >= 0.5:
                     return True
+            
+            # 고유명사 기반 같은 주제 체크
+            existing_content = existing_data.get('contents', [None] * len(existing_data['titles']))
+            ex_content = existing_content[i] if i < len(existing_content) else None
+            if is_same_topic(title, content, existing_title, ex_content):
+                return True
     
     return False
 
@@ -1463,7 +1548,7 @@ def main():
                 if check_duplicate_in_cache(existing_news_data, link, title):
                     continue
                 
-                is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles, 0.55)
+                is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles)
                 if is_db_dup:
                     print(f"      [DB중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
                     continue
