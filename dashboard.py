@@ -439,6 +439,118 @@ def render_main_page():
             st.markdown("---")
 
 
+def get_sync_status():
+    """DB와 스프레드시트 동기화 상태 확인"""
+    from utils.database import get_connection
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    
+    cm = st.session_state.config_manager
+    sheet_url = cm.get("google_sheet", "url", "")
+    
+    result = {
+        "db_links": set(),
+        "sheet_links": set(),
+        "sheet_rows": {},  # link -> row_number
+        "only_in_db": [],
+        "only_in_sheet": [],
+        "synced": []
+    }
+    
+    # DB에서 모든 링크 가져오기
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, title, link, category FROM news WHERE status = 'pending'")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        for row in rows:
+            if row[2]:
+                result["db_links"].add(row[2])
+    except Exception as e:
+        print(f"DB 조회 오류: {e}")
+    
+    # 스프레드시트에서 모든 링크 가져오기
+    if sheet_url:
+        try:
+            creds_path = current_dir / 'credentials.json'
+            if creds_path.exists():
+                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                creds = ServiceAccountCredentials.from_json_keyfile_name(str(creds_path), scope)
+                client = gspread.authorize(creds)
+                sheet = client.open_by_url(sheet_url).sheet1
+                
+                all_values = sheet.get_all_values()
+                for i, row in enumerate(all_values[1:], start=2):  # 헤더 제외
+                    if len(row) >= 3 and row[2]:  # C열=링크
+                        link = row[2].strip()
+                        result["sheet_links"].add(link)
+                        result["sheet_rows"][link] = i
+        except Exception as e:
+            print(f"시트 조회 오류: {e}")
+    
+    # 차이 계산
+    result["only_in_db"] = list(result["db_links"] - result["sheet_links"])
+    result["only_in_sheet"] = list(result["sheet_links"] - result["db_links"])
+    result["synced"] = list(result["db_links"] & result["sheet_links"])
+    
+    return result
+
+
+def sync_delete_from_db(links):
+    """시트에 없는 항목들을 DB에서 삭제"""
+    from utils.database import get_connection
+    
+    deleted = 0
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        for link in links:
+            cur.execute("DELETE FROM news WHERE link = %s", (link,))
+            deleted += cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"DB 삭제 오류: {e}")
+    return deleted
+
+
+def sync_delete_from_sheet(links, sheet_rows):
+    """DB에 없는 항목들을 스프레드시트에서 삭제"""
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    
+    cm = st.session_state.config_manager
+    sheet_url = cm.get("google_sheet", "url", "")
+    
+    deleted = 0
+    if not sheet_url:
+        return 0
+    
+    try:
+        creds_path = current_dir / 'credentials.json'
+        if creds_path.exists():
+            scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+            creds = ServiceAccountCredentials.from_json_keyfile_name(str(creds_path), scope)
+            client = gspread.authorize(creds)
+            sheet = client.open_by_url(sheet_url).sheet1
+            
+            # 행 번호 내림차순으로 삭제 (아래에서부터)
+            rows_to_delete = sorted([sheet_rows[link] for link in links if link in sheet_rows], reverse=True)
+            for row_num in rows_to_delete:
+                try:
+                    sheet.delete_rows(row_num)
+                    deleted += 1
+                except:
+                    pass
+    except Exception as e:
+        print(f"시트 삭제 오류: {e}")
+    return deleted
+
+
 def delete_news_from_db_and_sheet(news_id, link):
     """DB와 스프레드시트에서 뉴스 삭제"""
     from utils.database import get_connection
@@ -497,7 +609,7 @@ def render_news_page():
 
         st.markdown("---")
 
-        tab1, tab2 = st.tabs(["📁 DB/시트 저장됨", "✅ 뉴스타운 업로드됨"])
+        tab1, tab2, tab3 = st.tabs(["📁 DB/시트 저장됨", "✅ 뉴스타운 업로드됨", "🔄 동기화"])
         
         with tab1:
             c1, c2, c3 = st.columns([1, 1, 1])
@@ -636,6 +748,58 @@ def render_news_page():
                                 st.rerun()
             else:
                 st.info("뉴스타운에 업로드된 뉴스가 없습니다.")
+        
+        with tab3:
+            st.markdown("### DB ↔ 스프레드시트 동기화 상태")
+            
+            if st.button("동기화 상태 확인", type="primary"):
+                with st.spinner("확인 중..."):
+                    sync_status = get_sync_status()
+                    st.session_state.sync_status = sync_status
+            
+            if 'sync_status' in st.session_state:
+                sync = st.session_state.sync_status
+                
+                cols = st.columns(3)
+                with cols[0]:
+                    st.metric("동기화됨", len(sync["synced"]))
+                with cols[1]:
+                    st.metric("DB에만 있음", len(sync["only_in_db"]), delta=len(sync["only_in_db"]) if sync["only_in_db"] else None, delta_color="inverse")
+                with cols[2]:
+                    st.metric("시트에만 있음", len(sync["only_in_sheet"]), delta=len(sync["only_in_sheet"]) if sync["only_in_sheet"] else None, delta_color="inverse")
+                
+                st.markdown("---")
+                
+                # DB에만 있는 항목 (시트에서 삭제됨)
+                if sync["only_in_db"]:
+                    st.warning(f"DB에만 있는 뉴스: {len(sync['only_in_db'])}개 (시트에서 삭제됨)")
+                    with st.expander("DB에만 있는 항목 보기"):
+                        for link in sync["only_in_db"][:10]:
+                            st.caption(link[:80] + "...")
+                    
+                    if st.button("DB에서 삭제 (시트와 맞춤)", key="sync_del_db"):
+                        deleted = sync_delete_from_db(sync["only_in_db"])
+                        st.success(f"DB에서 {deleted}개 삭제 완료")
+                        if 'sync_status' in st.session_state:
+                            del st.session_state.sync_status
+                        st.rerun()
+                
+                # 시트에만 있는 항목 (DB에서 삭제됨)
+                if sync["only_in_sheet"]:
+                    st.warning(f"시트에만 있는 뉴스: {len(sync['only_in_sheet'])}개 (DB에서 삭제됨)")
+                    with st.expander("시트에만 있는 항목 보기"):
+                        for link in sync["only_in_sheet"][:10]:
+                            st.caption(link[:80] + "...")
+                    
+                    if st.button("시트에서 삭제 (DB와 맞춤)", key="sync_del_sheet"):
+                        deleted = sync_delete_from_sheet(sync["only_in_sheet"], sync["sheet_rows"])
+                        st.success(f"시트에서 {deleted}개 삭제 완료")
+                        if 'sync_status' in st.session_state:
+                            del st.session_state.sync_status
+                        st.rerun()
+                
+                if not sync["only_in_db"] and not sync["only_in_sheet"]:
+                    st.success("DB와 스프레드시트가 완전히 동기화되었습니다!")
             
     except Exception as e:
         st.error(f"오류: {e}")
