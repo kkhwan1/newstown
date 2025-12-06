@@ -75,6 +75,11 @@ class ConfigManager:
         "naver_api": {
             "client_id": "hj620p2ZnD94LNjNaW8d",
             "client_secret": "sDRT5fUUaK"
+        },
+        "news_schedule": {
+            "enabled": False,
+            "interval_hours": 3,
+            "last_run": None
         }
     }
 
