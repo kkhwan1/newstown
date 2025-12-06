@@ -276,25 +276,28 @@ class ConfigManager:
 
     # 편의 메서드들
     def get_news_config(self) -> Dict[str, Any]:
-        """뉴스 수집 설정 반환"""
-        config = self.get("news_collection")
+        """뉴스 수집 설정 반환 (복사본 반환)"""
+        import copy
+        config = copy.deepcopy(self.get("news_collection"))
         config['sheet_url'] = self.get("google_sheet", "url")
         config['naver_client_id'] = self.get("naver_api", "client_id")
         config['naver_client_secret'] = self.get("naver_api", "client_secret")
-        config['category_keywords'] = self.get("category_keywords") or {}
+        config['category_keywords'] = copy.deepcopy(self.get("category_keywords") or {})
         return config
 
     def get_upload_config(self) -> Dict[str, Any]:
-        """업로드 감시 설정 반환"""
-        config = self.get("upload_monitor")
+        """업로드 감시 설정 반환 (복사본 반환)"""
+        import copy
+        config = copy.deepcopy(self.get("upload_monitor"))
         config['sheet_url'] = self.get("google_sheet", "url")
         config['site_id'] = self.get("newstown", "site_id")
         config['site_pw'] = self.get("newstown", "site_pw")
         return config
 
     def get_deletion_config(self) -> Dict[str, Any]:
-        """행 삭제 설정 반환"""
-        config = self.get("row_deletion")
+        """행 삭제 설정 반환 (복사본 반환)"""
+        import copy
+        config = copy.deepcopy(self.get("row_deletion"))
         config['sheet_url'] = self.get("google_sheet", "url")
         config['completed_column'] = self.get("upload_monitor", "completed_column")
         return config
