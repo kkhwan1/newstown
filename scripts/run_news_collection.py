@@ -91,6 +91,15 @@ def apply_config(config):
         
         if keyword_map:
             naver_to_sheet.KEYWORD_CATEGORY_MAP = keyword_map
+            log(f"카테고리 매핑: {len(keyword_map)}개 설정됨")
+            # 카테고리별 키워드 수 로깅
+            cat_counts = {"연애": 0, "경제": 0, "스포츠": 0}
+            for kw, cat in keyword_map.items():
+                if cat in cat_counts:
+                    cat_counts[cat] += 1
+            log(f"  - 연애: {cat_counts['연애']}개 키워드")
+            log(f"  - 경제: {cat_counts['경제']}개 키워드")
+            log(f"  - 스포츠: {cat_counts['스포츠']}개 키워드")
     
     elif 'keywords' in config:
         naver_to_sheet.KEYWORDS = config['keywords']
