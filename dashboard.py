@@ -386,28 +386,38 @@ def render_main_page():
             default_sort_idx = 0 if current_sort == "sim" else 1
             sort_option = st.radio("정렬 방식", ["인기순", "최신순"], horizontal=True, key="sort_option", index=default_sort_idx, help="인기순: 관심도 높은 뉴스 / 최신순: 최근 발행 뉴스")
             new_sort = "sim" if sort_option == "인기순" else "date"
-            if new_sort != current_sort:
-                cm.set("news_collection", "sort", new_sort)
+            if st.button("정렬 방식 저장", key="save_sort"):
+                if new_sort != current_sort:
+                    cm.set("news_collection", "sort", new_sort)
+                    st.success("정렬 방식이 저장되었습니다.")
+                    st.rerun()
             
         with st.expander("발행 개수 설정", expanded=True):
             mode = st.radio("설정 방식", ["전체 동일", "카테고리별"], horizontal=True, key="pub_mode")
             
-            old_keywords = keywords.copy()
             if mode == "전체 동일":
-                total_count = st.number_input("전체 카테고리 발행 개수", min_value=0, max_value=100, value=keywords.get("연애", 15), key="total_pub")
-                for cat in categories:
-                    keywords[cat] = total_count
+                current_val = keywords.get("연애", 15)
+                total_count = st.number_input("전체 카테고리 발행 개수", min_value=0, max_value=100, value=current_val, key="total_pub")
+                if st.button("적용", key="apply_total_pub"):
+                    new_keywords = {cat: total_count for cat in categories}
+                    if new_keywords != keywords:
+                        cm.set("news_collection", "keywords", new_keywords)
+                        st.rerun()
+                display_keywords = {cat: total_count for cat in categories}
             else:
                 cols = st.columns(3)
+                new_keywords = {}
                 for idx, cat in enumerate(categories):
                     with cols[idx]:
-                        keywords[cat] = st.number_input(f"{cat}", min_value=0, max_value=100, value=keywords.get(cat, 15), key=f"pub_{cat}")
+                        new_keywords[cat] = st.number_input(f"{cat}", min_value=0, max_value=100, value=keywords.get(cat, 15), key=f"pub_{cat}")
+                if st.button("적용", key="apply_cat_pub"):
+                    if new_keywords != keywords:
+                        cm.set("news_collection", "keywords", new_keywords)
+                        st.rerun()
+                display_keywords = new_keywords
             
-            total_sum = sum(keywords.values())
-            st.caption(f"총 {total_sum}개 뉴스 수집 예정 (연애 {keywords['연애']} + 경제 {keywords['경제']} + 스포츠 {keywords['스포츠']})")
-            
-            if keywords != old_keywords:
-                cm.set("news_collection", "keywords", keywords)
+            total_sum = sum(display_keywords.values())
+            st.caption(f"총 {total_sum}개 뉴스 수집 예정 (연애 {display_keywords['연애']} + 경제 {display_keywords['경제']} + 스포츠 {display_keywords['스포츠']})")
 
     st.markdown("---")
 
