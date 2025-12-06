@@ -1852,7 +1852,8 @@ def main():
                 result['title'],      # A열: 제목
                 result['content'],    # B열: 본문
                 result['link'],       # C열: 링크
-                category              # D열: 카테고리
+                category,             # D열: 대분류 카테고리
+                search_keyword        # E열: 검색 키워드
             ])
             count += 1
             print(f"[OK] [{category}] {idx}/{len(news_results)} 준비 완료: {result['title'][:30]}...")
@@ -1888,7 +1889,8 @@ def main():
                                     title=row[0],
                                     content=row[1],
                                     link=row[2],
-                                    category=row[3] if len(row) > 3 else "미분류"
+                                    category=row[3] if len(row) > 3 else "미분류",
+                                    search_keyword=row[4] if len(row) > 4 else None
                                 )
                         except Exception as db_err:
                             print(f"   [WARN] DB 저장 실패: {db_err}")

@@ -29,6 +29,7 @@ def init_database():
             content TEXT,
             link TEXT UNIQUE,
             category VARCHAR(50),
+            search_keyword VARCHAR(100),
             source VARCHAR(100),
             ai_title TEXT,
             ai_content TEXT,
@@ -64,18 +65,27 @@ def init_database():
     cur.close()
     conn.close()
 
-def save_news(title: str, content: str, link: str, category: str, source: str = "네이버뉴스") -> Optional[int]:
-    """뉴스 저장"""
+def save_news(title: str, content: str, link: str, category: str, source: str = "네이버뉴스", search_keyword: str = None) -> Optional[int]:
+    """뉴스 저장
+    
+    Args:
+        title: 뉴스 제목
+        content: 뉴스 본문
+        link: 뉴스 링크
+        category: 대분류 카테고리 (연애/경제/스포츠)
+        source: 출처
+        search_keyword: 검색에 사용된 키워드
+    """
     conn = get_connection()
     cur = conn.cursor()
     
     try:
         cur.execute("""
-            INSERT INTO news (title, content, link, category, source)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO news (title, content, link, category, search_keyword, source)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (link) DO NOTHING
             RETURNING id
-        """, (title, content, link, category, source))
+        """, (title, content, link, category, search_keyword, source))
         
         result = cur.fetchone()
         conn.commit()
