@@ -439,6 +439,49 @@ def render_main_page():
             st.markdown("---")
 
 
+def delete_news_from_db_and_sheet(news_id, link):
+    """DB와 스프레드시트에서 뉴스 삭제"""
+    from utils.database import get_connection
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    
+    cm = st.session_state.config_manager
+    sheet_url = cm.get("google_sheet", "url", "")
+    
+    # 1. DB에서 삭제
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM news WHERE id = %s", (news_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        st.error(f"DB 삭제 오류: {e}")
+        return False
+    
+    # 2. 스프레드시트에서 삭제 (링크로 찾아서)
+    if sheet_url and link:
+        try:
+            creds_path = current_dir / 'credentials.json'
+            if creds_path.exists():
+                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                creds = ServiceAccountCredentials.from_json_keyfile_name(str(creds_path), scope)
+                client = gspread.authorize(creds)
+                sheet = client.open_by_url(sheet_url).sheet1
+                
+                # C열(링크)에서 해당 링크 찾기
+                try:
+                    cell = sheet.find(link)
+                    if cell:
+                        sheet.delete_rows(cell.row)
+                except:
+                    pass  # 시트에 없으면 무시
+        except Exception as e:
+            st.warning(f"시트 삭제 오류: {e}")
+    
+    return True
+
 def render_news_page():
     st.markdown("# 뉴스 조회")
     
@@ -457,11 +500,34 @@ def render_news_page():
         tab1, tab2 = st.tabs(["📁 DB/시트 저장됨", "✅ 뉴스타운 업로드됨"])
         
         with tab1:
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns([1, 1, 1])
             with c1:
                 cat = st.selectbox("카테고리", ["전체", "연애", "경제", "스포츠"], key="cat1")
             with c2:
                 sort1 = st.selectbox("정렬", ["최신순", "오래된순"], key="sort1")
+            with c3:
+                if st.button("전체 삭제", key="del_all_pending", type="secondary"):
+                    st.session_state.confirm_delete_all = True
+            
+            if st.session_state.get('confirm_delete_all', False):
+                st.warning("정말로 모든 대기중 뉴스를 삭제하시겠습니까?")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("예, 삭제합니다", type="primary", key="confirm_yes"):
+                        from utils.database import get_connection
+                        cat_val_del = None if cat == "전체" else cat
+                        news_to_del = get_news_list(category=cat_val_del, status="pending", limit=500)
+                        deleted = 0
+                        for n in news_to_del:
+                            if delete_news_from_db_and_sheet(n['id'], n.get('link', '')):
+                                deleted += 1
+                        st.success(f"{deleted}개 뉴스 삭제 완료")
+                        st.session_state.confirm_delete_all = False
+                        st.rerun()
+                with c2:
+                    if st.button("취소", key="confirm_no"):
+                        st.session_state.confirm_delete_all = False
+                        st.rerun()
             
             cat_val = None if cat == "전체" else cat
             news_list = get_news_list(category=cat_val, status="pending", limit=50)
@@ -470,21 +536,21 @@ def render_news_page():
                 news_list = list(reversed(news_list))
             
             if news_list:
-                data = []
-                for n in news_list:
-                    data.append({
-                        "제목": n.get('title', '')[:50] + "...",
-                        "대분류": n.get('category', '-'),
-                        "검색어": n.get('search_keyword', '-'),
-                        "수집일": str(n.get('created_at', ''))[:10]
-                    })
-                st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+                st.caption(f"총 {len(news_list)}개 뉴스")
                 
-                with st.expander("상세 보기"):
-                    for n in news_list[:10]:
-                        st.markdown(f"**{n.get('title', '')}**")
-                        st.caption(n.get('content', '')[:200])
-                        st.markdown("---")
+                for idx, n in enumerate(news_list):
+                    col1, col2 = st.columns([0.9, 0.1])
+                    with col1:
+                        with st.expander(f"**{n.get('title', '')[:60]}...** | {n.get('category', '-')} | {str(n.get('created_at', ''))[:10]}"):
+                            st.markdown(f"**제목**: {n.get('title', '')}")
+                            st.markdown(f"**카테고리**: {n.get('category', '-')} | **검색어**: {n.get('search_keyword', '-')}")
+                            st.caption(n.get('content', '')[:300] + "...")
+                            st.markdown(f"[원문 링크]({n.get('link', '')})")
+                    with col2:
+                        if st.button("🗑️", key=f"del_pending_{n['id']}", help="삭제"):
+                            if delete_news_from_db_and_sheet(n['id'], n.get('link', '')):
+                                st.success("삭제됨")
+                                st.rerun()
             else:
                 st.info("대기 중인 뉴스가 없습니다.")
         
@@ -502,15 +568,22 @@ def render_news_page():
                 uploaded_list = list(reversed(uploaded_list))
             
             if uploaded_list:
-                data = []
-                for n in uploaded_list:
-                    data.append({
-                        "제목": n.get('title', '')[:50] + "...",
-                        "대분류": n.get('category', '-'),
-                        "검색어": n.get('search_keyword', '-'),
-                        "업로드일": str(n.get('uploaded_at', ''))[:10] if n.get('uploaded_at') else '-'
-                    })
-                st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+                st.caption(f"총 {len(uploaded_list)}개 업로드됨")
+                
+                for idx, n in enumerate(uploaded_list):
+                    col1, col2 = st.columns([0.9, 0.1])
+                    with col1:
+                        uploaded_at = str(n.get('uploaded_at', ''))[:16] if n.get('uploaded_at') else '-'
+                        with st.expander(f"**{n.get('title', '')[:60]}...** | {n.get('category', '-')} | 업로드: {uploaded_at}"):
+                            st.markdown(f"**제목**: {n.get('title', '')}")
+                            st.markdown(f"**카테고리**: {n.get('category', '-')} | **검색어**: {n.get('search_keyword', '-')}")
+                            st.markdown(f"**업로드 시간**: {uploaded_at}")
+                            st.caption(n.get('content', '')[:300] + "...")
+                    with col2:
+                        if st.button("🗑️", key=f"del_uploaded_{n['id']}", help="삭제"):
+                            if delete_news_from_db_and_sheet(n['id'], n.get('link', '')):
+                                st.success("삭제됨")
+                                st.rerun()
             else:
                 st.info("뉴스타운에 업로드된 뉴스가 없습니다.")
             

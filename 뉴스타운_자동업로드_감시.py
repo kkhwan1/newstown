@@ -91,6 +91,36 @@ def retry_with_backoff(func, *args, **kwargs):
     if last_exception:
         raise last_exception
 
+def update_db_status_to_uploaded(link):
+    """DB에서 해당 링크의 뉴스를 uploaded 상태로 변경"""
+    import os
+    import psycopg2
+    from datetime import datetime
+    
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        print("⚠️ DATABASE_URL 환경변수가 없습니다.")
+        return False
+    
+    try:
+        conn = psycopg2.connect(database_url)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE news SET status = 'uploaded', uploaded_at = %s WHERE link = %s",
+            (datetime.now(), link)
+        )
+        rows_updated = cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        if rows_updated > 0:
+            print(f"✅ DB 상태 업데이트 완료: {rows_updated}개 뉴스 → uploaded")
+        return True
+    except Exception as e:
+        print(f"⚠️ DB 업데이트 오류: {e}")
+        return False
+
 def get_chrome_driver():
     """ChromeDriver 초기화 함수"""
     import shutil
@@ -329,6 +359,15 @@ def check_and_upload(sheet):
                     retry_with_backoff(sheet.update_cell, i, COMPLETED_COLUMN, completed_time)
                     print(f"✅ 업로드 완료! 행 {i}번 항목이 성공적으로 업로드되었습니다.")
                     print(f"   구글 시트 H열에 완료 상태가 기록되었습니다: {completed_time}")
+                    
+                    # DB 상태도 업데이트 (링크로 찾아서)
+                    try:
+                        link = row[2].strip() if len(row) > 2 and row[2] else ""
+                        if link:
+                            update_db_status_to_uploaded(link)
+                    except Exception as db_err:
+                        print(f"⚠️ DB 상태 업데이트 실패: {db_err}")
+                    
                     return True  # 하나 업로드했으면 종료
                 except Exception as sheet_error:
                     print(f"✅ 업로드 완료! 행 {i}번 항목이 성공적으로 업로드되었습니다.")
