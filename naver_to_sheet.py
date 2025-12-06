@@ -1112,17 +1112,46 @@ def get_db_titles():
         print(f"[WARN] DB 제목 로드 실패: {e}")
         return []
 
-def is_duplicate_in_db(new_title, db_titles, threshold=0.75):
-    """DB 제목과 유사도 75% 이상이면 중복 판정. (중복여부, 유사도, 매칭제목) 반환"""
+def extract_key_phrases(text):
+    """핵심 키워드/구절 추출 (중복 판별용)"""
+    if not text:
+        return set()
+    normalized = normalize_text(text)
+    words = normalized.split()
+    # 2글자 이상 단어만 추출
+    key_words = set(w for w in words if len(w) >= 2)
+    # 연속 2단어 조합도 추가 (bigram)
+    for i in range(len(words) - 1):
+        if len(words[i]) >= 2 and len(words[i+1]) >= 2:
+            key_words.add(words[i] + words[i+1])
+    return key_words
+
+def is_duplicate_in_db(new_title, db_titles, threshold=0.55):
+    """DB 제목과 유사도 55% 이상이면 중복 판정 (더 엄격). (중복여부, 유사도, 매칭제목) 반환"""
     if not db_titles:
         return (False, 0.0, None)
     
     new_normalized = normalize_text(new_title)
+    new_key_phrases = extract_key_phrases(new_title)
+    
     for title in db_titles:
         existing_normalized = normalize_text(title)
+        
+        # 1. SequenceMatcher 유사도 체크
         ratio = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
         if ratio >= threshold:
             return (True, ratio, title)
+        
+        # 2. 핵심 키워드 중복률 체크 (70% 이상 키워드 겹치면 중복)
+        existing_key_phrases = extract_key_phrases(title)
+        if new_key_phrases and existing_key_phrases:
+            common = new_key_phrases.intersection(existing_key_phrases)
+            smaller_set = min(len(new_key_phrases), len(existing_key_phrases))
+            if smaller_set > 0:
+                keyword_overlap = len(common) / smaller_set
+                if keyword_overlap >= 0.7:
+                    return (True, keyword_overlap, title)
+    
     return (False, 0.0, None)
 
 def load_existing_news(sheet):
@@ -1203,9 +1232,17 @@ def check_duplicate_in_cache(existing_data, link, title=None):
         # 제목 유사도 체크
         for existing_title, normalized_existing_title in zip(existing_data['titles'], existing_data['normalized_titles']):
             similarity = calculate_similarity(normalized_new_title, normalized_existing_title)
-            # 유사도가 0.75 이상이면 중복으로 간주
-            if similarity >= 0.75:
+            # 유사도가 0.55 이상이면 중복으로 간주 (더 엄격)
+            if similarity >= 0.55:
                 return True
+            # 핵심 키워드 중복률 체크 추가
+            new_phrases = extract_key_phrases(title)
+            existing_phrases = extract_key_phrases(existing_title)
+            if new_phrases and existing_phrases:
+                common = new_phrases.intersection(existing_phrases)
+                smaller = min(len(new_phrases), len(existing_phrases))
+                if smaller > 0 and len(common) / smaller >= 0.7:
+                    return True
     
     return False
 
@@ -1445,8 +1482,8 @@ def main():
                     if link and link not in all_news_links:
                         # 2단계: 기존 스프레드시트와 중복 체크
                         if not check_duplicate_in_cache(existing_news_data, link, title):
-                            # 3단계: DB 중복 체크 (제목 유사도 75%)
-                            is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles, 0.75)
+                            # 3단계: DB 중복 체크 (제목 유사도 55% + 키워드 70%)
+                            is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles, 0.55)
                             if is_db_dup:
                                 db_dup_count += 1
                                 total_db_duplicate_count += 1
