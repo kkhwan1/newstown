@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import os
 import sys
 import json
@@ -96,6 +97,48 @@ def init_database():
         return True
     except:
         return False
+
+
+def check_scheduled_news_collection():
+    """스케줄된 뉴스 수집 체크 및 실행"""
+    from datetime import datetime, timedelta
+    
+    if 'config_manager' not in st.session_state or 'process_manager' not in st.session_state:
+        return
+    
+    cm = st.session_state.config_manager
+    pm = st.session_state.process_manager
+    
+    schedule_config = cm.get("news_schedule")
+    if not schedule_config.get("enabled", False):
+        return
+    
+    news_status = pm.get_status(PROC_NEWS)
+    if news_status['running']:
+        return
+    
+    interval_hours = schedule_config.get("interval_hours", 3)
+    last_run = schedule_config.get("last_run")
+    
+    now = datetime.now()
+    should_run = False
+    
+    if last_run is None:
+        should_run = True
+    else:
+        try:
+            last_dt = datetime.fromisoformat(last_run)
+            next_run = last_dt + timedelta(hours=interval_hours)
+            if now >= next_run:
+                should_run = True
+        except:
+            should_run = True
+    
+    if should_run:
+        config = cm.get_news_config()
+        pm.start_process(PROC_NEWS, str(NEWS_SCRIPT), config)
+        cm.set("news_schedule", "last_run", now.isoformat())
+        st.toast(f"스케줄된 뉴스 수집이 시작되었습니다.")
 
 
 def search_naver_news(keyword, display=10, sort="date"):
@@ -418,6 +461,34 @@ def render_main_page():
             
             total_sum = sum(display_keywords.values())
             st.caption(f"총 {total_sum}개 뉴스 수집 예정 (연애 {display_keywords['연애']} + 경제 {display_keywords['경제']} + 스포츠 {display_keywords['스포츠']})")
+
+        with st.expander("자동 수집 스케줄", expanded=False):
+            schedule_config = cm.get("news_schedule")
+            schedule_enabled = schedule_config.get("enabled", False)
+            schedule_interval = schedule_config.get("interval_hours", 3)
+            last_run = schedule_config.get("last_run")
+            
+            new_enabled = st.checkbox("자동 수집 활성화", value=schedule_enabled, key="schedule_enabled")
+            new_interval = st.number_input("수집 간격 (시간)", min_value=1, max_value=24, value=schedule_interval, key="schedule_interval")
+            
+            if last_run:
+                from datetime import datetime, timedelta
+                try:
+                    last_dt = datetime.fromisoformat(last_run)
+                    next_dt = last_dt + timedelta(hours=schedule_interval)
+                    st.caption(f"마지막 수집: {last_dt.strftime('%Y-%m-%d %H:%M')}")
+                    st.caption(f"다음 수집 예정: {next_dt.strftime('%Y-%m-%d %H:%M')}")
+                except:
+                    st.caption("마지막 수집: 기록 없음")
+            else:
+                st.caption("마지막 수집: 아직 실행되지 않음")
+            
+            if st.button("스케줄 설정 저장", key="save_schedule"):
+                if new_enabled != schedule_enabled or new_interval != schedule_interval:
+                    cm.set("news_schedule", "enabled", new_enabled)
+                    cm.set("news_schedule", "interval_hours", new_interval)
+                    st.success("스케줄 설정이 저장되었습니다.")
+                    st.rerun()
 
     st.markdown("---")
 
@@ -1063,6 +1134,13 @@ def render_settings_page():
 def main():
     init_session_state()
     init_database()
+    
+    cm = st.session_state.config_manager
+    schedule_config = cm.get("news_schedule")
+    if schedule_config.get("enabled", False):
+        st_autorefresh(interval=5 * 60 * 1000, key="schedule_refresh")
+    
+    check_scheduled_news_collection()
 
     with st.sidebar:
         st.markdown("### 메뉴")
