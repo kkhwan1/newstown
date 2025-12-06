@@ -176,10 +176,20 @@ class ConfigManager:
             self._save()
 
     def _save(self):
-        """설정 파일 저장"""
+        """설정 파일 저장 (변경사항이 있을 때만)"""
         try:
             # 디렉토리가 없으면 생성
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # 기존 파일 내용과 비교하여 변경사항이 있을 때만 저장
+            if self.config_path.exists():
+                try:
+                    with open(self.config_path, 'r', encoding='utf-8') as f:
+                        existing_data = json.load(f)
+                    if existing_data == self._config:
+                        return  # 변경사항 없음, 저장하지 않음
+                except Exception:
+                    pass  # 파일 읽기 실패시 저장 진행
 
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self._config, f, ensure_ascii=False, indent=2)
