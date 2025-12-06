@@ -38,8 +38,10 @@ streamlit run dashboard.py
 
 ## 데이터베이스 테이블
 ### news
-- id, title, content, link, category, source
-- ai_title, ai_content (AI 가공 결과)
+- id, title, content, link
+- **category**: 대분류 카테고리 (연애/경제/스포츠)
+- **search_keyword**: 검색에 사용된 키워드 (예: 손흥민, 결혼, 주식)
+- source, ai_title, ai_content (AI 가공 결과)
 - status: pending (대기) / uploaded (뉴스타운 업로드 완료) / failed
 - created_at, uploaded_at
 
