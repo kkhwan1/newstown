@@ -104,12 +104,15 @@ class ProcessManager:
 
             log_file = open(self._get_log_file(name), 'w', encoding='utf-8')
 
+            script_abs_path = os.path.abspath(script_path)
+            project_dir = os.path.dirname(os.path.dirname(script_abs_path))
+            
             process = subprocess.Popen(
-                [sys.executable, script_path],
+                [sys.executable, script_abs_path],
                 env=env,
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                cwd=os.path.dirname(script_path) or os.getcwd(),
+                cwd=project_dir,
                 start_new_session=True
             )
 
