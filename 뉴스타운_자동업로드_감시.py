@@ -9,6 +9,14 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import time
 import random
+from datetime import datetime, timezone, timedelta
+
+# 한국 시간대 (KST = UTC+9)
+KST = timezone(timedelta(hours=9))
+
+def get_kst_time():
+    """현재 한국 시간을 문자열로 반환"""
+    return datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -95,7 +103,6 @@ def update_db_status_to_uploaded(link):
     """DB에서 해당 링크의 뉴스를 uploaded 상태로 변경"""
     import os
     import psycopg2
-    from datetime import datetime
     
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
@@ -107,7 +114,7 @@ def update_db_status_to_uploaded(link):
         cur = conn.cursor()
         cur.execute(
             "UPDATE news SET status = 'uploaded', uploaded_at = %s WHERE link = %s",
-            (datetime.now(), link)
+            (datetime.now(KST), link)
         )
         rows_updated = cur.rowcount
         conn.commit()
@@ -344,7 +351,7 @@ def check_and_upload(sheet):
                 continue  # 이미 완료된 항목은 건너뛰기
             
             # 여기까지 왔으면 업로드할 항목 발견
-            print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] [감지] 행 {i}번 업로드 시작")
+            print(f"\n[{get_kst_time()}] [감지] 행 {i}번 업로드 시작")
             print(f"   D열(카테고리): {category if category else '(없음)'}")
             print(f"   E열(AI_제목): {ai_title[:50]}...")
             print(f"   F열(AI_본문): {ai_content[:50]}...")
@@ -355,7 +362,7 @@ def check_and_upload(sheet):
             if success:
                 # 성공 시: H열에 완료 시간 기록 (재시도 로직 적용)
                 try:
-                    completed_time = f"완료 {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    completed_time = f"완료 {get_kst_time()}"
                     retry_with_backoff(sheet.update_cell, i, COMPLETED_COLUMN, completed_time)
                     print(f"✅ 업로드 완료! 행 {i}번 항목이 성공적으로 업로드되었습니다.")
                     print(f"   구글 시트 H열에 완료 상태가 기록되었습니다: {completed_time}")
@@ -376,7 +383,7 @@ def check_and_upload(sheet):
             else:
                 # 실패 시: H열에 실패 기록 (재시도 로직 적용)
                 try:
-                    retry_with_backoff(sheet.update_cell, i, COMPLETED_COLUMN, f"실패 {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    retry_with_backoff(sheet.update_cell, i, COMPLETED_COLUMN, f"실패 {get_kst_time()}")
                     print(f"❌ 업로드 실패! 행 {i}번 항목 업로드에 실패했습니다.")
                 except Exception as sheet_error:
                     print(f"❌ 업로드 실패! 행 {i}번 항목 업로드에 실패했습니다.")
@@ -438,7 +445,7 @@ def main():
         while True:
             try:
                 check_count += 1
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {check_count}번째 확인 중...")
+                print(f"[{get_kst_time()}] {check_count}번째 확인 중...")
                 
                 result = check_and_upload(sheet)
                 

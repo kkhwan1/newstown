@@ -9,6 +9,14 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import time
 import random
+from datetime import datetime, timezone, timedelta
+
+# 한국 시간대 (KST = UTC+9)
+KST = timezone(timedelta(hours=9))
+
+def get_kst_time():
+    """현재 한국 시간을 문자열로 반환"""
+    return datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
 
 # Windows 콘솔에서 UTF-8 인코딩 설정
 if sys.platform == 'win32':
@@ -120,11 +128,11 @@ def delete_completed_rows(sheet):
         # 최대 삭제 개수 제한
         total_found = len(rows_to_delete)
         if total_found > MAX_DELETE_COUNT:
-            print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 삭제 대상 발견: {total_found}개 행 (최대 {MAX_DELETE_COUNT}개만 삭제)")
+            print(f"\n[{get_kst_time()}] 삭제 대상 발견: {total_found}개 행 (최대 {MAX_DELETE_COUNT}개만 삭제)")
             rows_to_delete = rows_to_delete[:MAX_DELETE_COUNT]  # 처음 MAX_DELETE_COUNT개만 선택
             print(f"   이번에 삭제할 행 번호: {rows_to_delete} (나머지 {total_found - MAX_DELETE_COUNT}개는 다음 번에 삭제)")
         else:
-            print(f"\n[{time.strftime('%Y-%m-%d %H:%M:%S')}] 삭제 대상 발견: {total_found}개 행")
+            print(f"\n[{get_kst_time()}] 삭제 대상 발견: {total_found}개 행")
             print(f"   삭제할 행 번호: {rows_to_delete}")
         
         # 각 행을 삭제 (재시도 로직 적용)
@@ -191,7 +199,7 @@ def main():
         while True:
             try:
                 delete_count += 1
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {delete_count}번째 삭제 작업 시작...")
+                print(f"[{get_kst_time()}] {delete_count}번째 삭제 작업 시작...")
                 
                 deleted_rows = delete_completed_rows(sheet)
                 
