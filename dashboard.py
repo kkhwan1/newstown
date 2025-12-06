@@ -601,7 +601,7 @@ def main():
 
     with st.sidebar:
         st.markdown("### 메뉴")
-        page = st.radio("", ["대시보드", "키워드 검색", "뉴스 조회", "로그", "프롬프트", "설정"], label_visibility="collapsed")
+        page = st.radio("페이지 선택", ["대시보드", "키워드 검색", "뉴스 조회", "로그", "프롬프트", "설정"], label_visibility="collapsed")
         st.markdown("---")
         if st.button("모든 프로세스 중지", use_container_width=True):
             st.session_state.process_manager.stop_all()
