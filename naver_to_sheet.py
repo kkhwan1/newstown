@@ -122,6 +122,13 @@ ENABLE_ECONOMY_CATEGORY = True   # True: 경제 뉴스도 수집
 # 9. 정렬 옵션
 SORT_OPTION = 'sim'  # 'sim': 인기순(관련도순), 'date': 최신순
 
+# 10. 카테고리별 수집 제한 (실제 저장할 개수)
+CATEGORY_LIMITS = {
+    "연애": 15,
+    "경제": 15,
+    "스포츠": 15
+}
+
 # ==========================================
 
 def get_naver_news(keyword, display=20, sort='date'):
@@ -1409,137 +1416,75 @@ def main():
     # ==========================================
     existing_news_data = load_existing_news(sheet)
     
-    # 실시간 뉴스 수집 (오늘 기준) - 연애, 스포츠
-    # 요청한 개수만큼 중복 없는 뉴스를 확보할 때까지 반복 검색
-    target_count = sum(KEYWORDS.values())  # 목표 개수
-    all_news_items = []
-    all_news_links = set()  # 중복 제거를 위한 링크 세트
-    searched_keywords = {}  # 각 키워드별 검색 횟수 추적
-    total_duplicate_count = 0  # 전체 스프레드시트 중복 개수
-    total_already_collected_count = 0  # 전체 이번 검색 중복 개수
-    total_not_today_count = 0  # 당일 아닌 뉴스 개수
-    total_db_duplicate_count = 0  # DB 중복 개수
+    # 카테고리별 수집 (CATEGORY_LIMITS 기준)
+    # 핵심: 키워드는 검색 필터, CATEGORY_LIMITS가 실제 저장 개수
+    category_collected = {"연애": [], "경제": [], "스포츠": []}
+    all_news_links = set()
+    
+    # 실제 목표 개수 (CATEGORY_LIMITS 기준)
+    target_count = sum(CATEGORY_LIMITS.values())
     
     # DB에서 기존 제목들 로드 (중복 체크용)
     db_titles = get_db_titles()
     print(f"\n[DB] 기존 DB 뉴스 {len(db_titles)}개 로드 완료")
     
-    print(f"\n[SEARCH] 실시간 뉴스 검색 중... (당일 + 인기순)")
-    print(f"   목표: 총 {target_count}개 중복 없는 뉴스")
-    print(f"   정렬: 인기순(sim) + 당일 뉴스만\n")
+    print(f"\n[SEARCH] 카테고리별 뉴스 수집 중...")
+    print(f"   목표: 연애 {CATEGORY_LIMITS.get('연애', 0)}개, 경제 {CATEGORY_LIMITS.get('경제', 0)}개, 스포츠 {CATEGORY_LIMITS.get('스포츠', 0)}개")
+    print(f"   총 목표: {target_count}개\n")
     
-    # 각 키워드별로 초기 검색 개수 설정 (요청 개수의 2배로 시작하여 중복 없는 뉴스 확보)
-    search_multiplier = 2  # 중복을 고려하여 2배로 검색
-    max_search_rounds = 5  # 최대 5라운드까지 검색
-    
-    for round_num in range(1, max_search_rounds + 1):
-        if len(all_news_items) >= target_count:
-            break
-            
-        print(f"[ROUND] 검색 라운드 {round_num}/{max_search_rounds} (현재 수집: {len(all_news_items)}/{target_count}개)")
+    # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
+    for keyword, search_count in KEYWORDS.items():
+        category = KEYWORD_CATEGORY_MAP.get(keyword, None)
+        if not category or category not in CATEGORY_LIMITS:
+            continue
         
-        # 각 키워드별로 뉴스 검색
-        for keyword, count in KEYWORDS.items():
-            if len(all_news_items) >= target_count:
-                break
-                
-            # 필요한 개수만큼 추가 검색 (이미 수집된 개수 고려)
-            needed_count = target_count - len(all_news_items)
-            search_count = min(count * search_multiplier, 100)  # 네이버 API 최대 100개
-            
-            if keyword not in searched_keywords:
-                searched_keywords[keyword] = 0
-            
-            # 이미 충분히 검색했으면 스킵
-            if searched_keywords[keyword] >= search_count:
-                continue
-            
-            print(f"   '{keyword}' 키워드로 추가 검색 중... (현재: {len(all_news_items)}/{target_count}개)")
-            news_result = get_naver_news(keyword, display=search_count, sort=SORT_OPTION)
-            
-            if news_result and 'items' in news_result:
-                new_items_count = 0
-                duplicate_count = 0  # 중복된 뉴스 개수
-                already_collected_count = 0  # 이미 수집된 뉴스 개수
-                not_today_count = 0  # 당일 아닌 뉴스 개수
-                db_dup_count = 0  # DB 중복 개수
-                
-                for item in news_result['items']:
-                    if len(all_news_items) >= target_count:
-                        break
-                        
-                    link = item.get('link', '').strip()
-                    title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                    pub_date = item.get('pubDate', '')
+        cat_limit = CATEGORY_LIMITS.get(category, 0)
+        if cat_limit <= 0 or len(category_collected[category]) >= cat_limit:
+            continue
+        
+        print(f"   '{keyword}' 검색 중 (카테고리: {category}, 현재: {len(category_collected[category])}/{cat_limit}개)")
+        news_result = get_naver_news(keyword, display=min(search_count, 50), sort=SORT_OPTION)
+        
+        if news_result and 'items' in news_result:
+            for item in news_result['items']:
+                if len(category_collected[category]) >= cat_limit:
+                    break
                     
-                    # 0단계: 당일 뉴스만 필터링
-                    if not is_today_news(pub_date):
-                        not_today_count += 1
-                        total_not_today_count += 1
-                        continue
-                    
-                    # 1단계: 이미 이번 검색에서 수집된 뉴스와 중복 체크
-                    if link and link not in all_news_links:
-                        # 2단계: 기존 스프레드시트와 중복 체크
-                        if not check_duplicate_in_cache(existing_news_data, link, title):
-                            # 3단계: DB 중복 체크 (제목 유사도 55% + 키워드 70%)
-                            is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles, 0.55)
-                            if is_db_dup:
-                                db_dup_count += 1
-                                total_db_duplicate_count += 1
-                                print(f"         [DB중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
-                                continue
-                            
-                            item['_search_keyword'] = keyword
-                            all_news_items.append(item)
-                            all_news_links.add(link)
-                            new_items_count += 1
-                            print(f"         [신규] {title[:40]}...")
-                        else:
-                            duplicate_count += 1  # 스프레드시트에 이미 있는 뉴스
-                            total_duplicate_count += 1
-                    else:
-                        already_collected_count += 1  # 이미 이번 검색에서 수집된 뉴스
-                        total_already_collected_count += 1
+                link = item.get('link', '').strip()
+                title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                pub_date = item.get('pubDate', '')
                 
-                searched_keywords[keyword] += len(news_result['items'])
-                print(f"      [OK] {keyword}: {new_items_count}개 신규 수집 (총 {len(all_news_items)}/{target_count}개)")
-                if not_today_count > 0:
-                    print(f"         [날짜] 당일 아닌 뉴스: {not_today_count}개 제외")
-                if db_dup_count > 0:
-                    print(f"         [DB] DB 중복: {db_dup_count}개 제외")
-                if duplicate_count > 0:
-                    print(f"         [시트] 스프레드시트 중복: {duplicate_count}개 제외")
-                if already_collected_count > 0:
-                    print(f"         [검색] 이번 검색 중복: {already_collected_count}개 제외")
+                if not is_today_news(pub_date):
+                    continue
+                
+                if link in all_news_links:
+                    continue
+                
+                if check_duplicate_in_cache(existing_news_data, link, title):
+                    continue
+                
+                is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles, 0.55)
+                if is_db_dup:
+                    print(f"      [DB중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
+                    continue
+                
+                item['_search_keyword'] = keyword
+                item['_category'] = category
+                category_collected[category].append(item)
+                all_news_links.add(link)
+                print(f"      [신규] {title[:40]}...")
         
-        # 목표 개수에 도달했는지 확인
-        if len(all_news_items) >= target_count:
-            print(f"\n[OK] 목표 개수 달성! 총 {len(all_news_items)}개 중복 없는 뉴스 수집 완료")
-            print(f"   [STAT] 필터링 통계:")
-            print(f"      - 당일 아닌 뉴스 제외: {total_not_today_count}개")
-            print(f"      - DB 중복 제외: {total_db_duplicate_count}개")
-            print(f"      - 스프레드시트 중복 제외: {total_duplicate_count}개")
-            print(f"      - 이번 검색 중복 제외: {total_already_collected_count}개")
-            break
-        
-        # 다음 라운드를 위해 검색 개수 증가
-        search_multiplier += 1
-        time.sleep(2)  # API 제한 방지를 위한 대기
+        time.sleep(0.5)
     
-    # 최종 통계 출력 (목표 개수에 도달하지 못한 경우에도)
-    if len(all_news_items) < target_count:
-        print(f"\n[WARN] 목표 개수({target_count}개)에 도달하지 못함 (실제: {len(all_news_items)}개)")
-        print(f"   [STAT] 필터링 통계:")
-        print(f"      - 당일 아닌 뉴스 제외: {total_not_today_count}개")
-        print(f"      - DB 중복 제외: {total_db_duplicate_count}개")
-        print(f"      - 스프레드시트 중복 제외: {total_duplicate_count}개")
-        print(f"      - 이번 검색 중복 제외: {total_already_collected_count}개")
+    # 카테고리별 수집 결과 출력
+    all_news_items = []
+    print(f"\n[STAT] 카테고리별 수집 결과:")
+    for cat, items in category_collected.items():
+        limit = CATEGORY_LIMITS.get(cat, 0)
+        print(f"   - {cat}: {len(items)}/{limit}개")
+        all_news_items.extend(items)
     
-    # 목표 개수만큼만 선택
-    all_news_items = all_news_items[:target_count]
-    
-    print(f"\n[STAT] 최종 수집: {len(all_news_items)}개 중복 없는 뉴스")
+    print(f"\n[STAT] 최종 수집: {len(all_news_items)}개 뉴스")
     
     # news_data 형식으로 변환
     news_data = {'items': all_news_items}
@@ -1619,14 +1564,16 @@ def main():
             if skip_person_news:
                 continue
             
-            # 검색 키워드 정보 유지
+            # 검색 키워드 및 카테고리 정보 유지
             search_keyword = item.get('_search_keyword', '')
+            category = item.get('_category', '')
             
             valid_items.append({
                 'title': title,
                 'description': description,
                 'link': link,
-                '_search_keyword': search_keyword  # 검색 키워드 유지
+                '_search_keyword': search_keyword,
+                '_category': category
             })
         
         print(f"[OK] 처리할 뉴스: {len(valid_items)}개 (필터링: {filtered_count}개)")
@@ -1705,7 +1652,8 @@ def main():
             title = item_data['title']
             description = item_data['description']
             link = item_data['link']
-            search_keyword = item_data.get('_search_keyword', '')  # 검색 키워드 유지
+            search_keyword = item_data.get('_search_keyword', '')
+            category = item_data.get('_category', '')
             
             try:
                 full_content = scrape_news_content(link)
@@ -1716,7 +1664,8 @@ def main():
                     'description': description,
                     'link': link,
                     'content': full_content,
-                    '_search_keyword': search_keyword,  # 검색 키워드 유지
+                    '_search_keyword': search_keyword,
+                    '_category': category,
                     'success': True
                 }
             except Exception as e:
@@ -1724,8 +1673,9 @@ def main():
                     'title': title,
                     'description': description,
                     'link': link,
-                    'content': description,  # 실패 시 요약문 사용
-                    '_search_keyword': search_keyword,  # 검색 키워드 유지
+                    'content': description,
+                    '_search_keyword': search_keyword,
+                    '_category': category,
                     'success': False,
                     'error': str(e)
                 }
@@ -1754,53 +1704,14 @@ def main():
         skipped_mismatch_count = 0  # 카테고리 불일치로 건너뛴 뉴스 수
         
         for result in news_results:
-            # 카테고리 자동 분류 (분류 함수로 실제 카테고리 확인)
-            search_keyword = result.get('_search_keyword', '')
+            # 수집 시 지정된 카테고리 사용 (이미 CATEGORY_LIMITS 기반으로 수집됨)
+            category = result.get('_category', '')
             
-            # 1. 분류 함수로 실제 카테고리 확인 (검색 키워드 전달)
-            actual_category = classify_news_category(result['title'], result['description'], result['content'], search_keyword)
-
-            # 2. 검색 키워드에서 목표 카테고리 확인
-            target_category = KEYWORD_CATEGORY_MAP.get(search_keyword, None)
-
-            # 3. 목표 카테고리와 실제 카테고리 검증
-            # 허용 카테고리 목록 (경제 카테고리 활성화 여부에 따라)
-            allowed_categories = ["연애", "스포츠"]
-            if ENABLE_ECONOMY_CATEGORY:
-                allowed_categories.append("경제")
-
-            if target_category:
-                # 목표 카테고리가 있는 경우
-                if actual_category != target_category:
-                    if SKIP_MISMATCHED_CATEGORY:
-                        # 불일치 시 건너뛰기
-                        skipped_mismatch_count += 1
-                        print(f"[SKIP] 건너뛰기: {result['title'][:35]}... (목표={target_category}, 실제={actual_category})")
-                        continue
-                    else:
-                        # 경고만 출력하고 저장 (기존 동작)
-                        category_mismatch_count += 1
-                        print(f"[WARN] 카테고리 불일치 (저장 진행): {result['title'][:40]}...")
-                        print(f"   목표={target_category}, 실제={actual_category}")
-                category = target_category
-            else:
-                # 목표 카테고리가 없으면 실제 카테고리 사용
-                if actual_category in allowed_categories:
-                    category = actual_category
-                else:
-                    # 키워드에서 추론
-                    if search_keyword:
-                        if any(kw in search_keyword for kw in ["연애", "연예", "커플", "결혼", "데이트"]):
-                            category = "연애"
-                        elif any(kw in search_keyword for kw in ["스포츠", "야구", "축구", "농구", "손흥민", "이강인", "K리그", "프로야구"]):
-                            category = "스포츠"
-                        elif ENABLE_ECONOMY_CATEGORY and any(kw in search_keyword for kw in ["주식", "부동산", "금리", "환율", "경제", "금융", "투자", "코스피"]):
-                            category = "경제"
-                        else:
-                            category = "연애"  # 기본값
-                    else:
-                        category = "연애"  # 기본값
-
+            if not category:
+                # 카테고리가 없으면 키워드에서 추론
+                search_keyword = result.get('_search_keyword', '')
+                category = KEYWORD_CATEGORY_MAP.get(search_keyword, '연애')
+            
             # 카테고리별로 그룹화
             if category in news_by_category:
                 news_by_category[category].append(result)
@@ -1821,21 +1732,17 @@ def main():
         # 목표 개수만큼만 선택
         shuffled_news_results = all_news_for_shuffle[:target_count]
 
-        # 카테고리별 통계 계산
-        shuffle_stats = {"연애": 0, "스포츠": 0}
-        if ENABLE_ECONOMY_CATEGORY:
-            shuffle_stats["경제"] = 0
+        # 카테고리별 통계 계산 (이미 지정된 _category 사용)
+        shuffle_stats = {"연애": 0, "스포츠": 0, "경제": 0}
         for r in shuffled_news_results:
-            kw = r.get('_search_keyword', '')
-            cat = KEYWORD_CATEGORY_MAP.get(kw, classify_news_category(r['title'], r.get('description', ''), r.get('content', ''), kw))
+            cat = r.get('_category', '')
             if cat in shuffle_stats:
                 shuffle_stats[cat] += 1
 
         print(f"   [OK] 섞기 완료: 총 {len(shuffled_news_results)}개")
         print(f"      - 연애: {shuffle_stats['연애']}개")
+        print(f"      - 경제: {shuffle_stats['경제']}개")
         print(f"      - 스포츠: {shuffle_stats['스포츠']}개")
-        if ENABLE_ECONOMY_CATEGORY:
-            print(f"      - 경제: {shuffle_stats['경제']}개")
 
         # 카테고리 분류 및 데이터 준비 (배치 저장)
         print(f"\n[STAT] 데이터 준비 중... (목표: {target_count}개)")
@@ -1846,54 +1753,31 @@ def main():
         rows_to_save = []  # 배치 저장을 위한 데이터 리스트
 
         for idx, result in enumerate(shuffled_news_results, 1):
-            # 목표 개수에 도달했으면 중단
             if count >= target_count:
                 print(f"\n[OK] 목표 개수({target_count}개) 달성! 저장 중단")
                 break
-            # 카테고리 자동 분류 (분류 함수로 실제 카테고리 확인)
-            search_keyword = result.get('_search_keyword', '')
-
-            # 1. 분류 함수로 실제 카테고리 확인 (검색 키워드 전달)
-            actual_category = classify_news_category(result['title'], result['description'], result['content'], search_keyword)
-
-            # 2. 검색 키워드에서 목표 카테고리 확인
-            target_category = KEYWORD_CATEGORY_MAP.get(search_keyword, None)
-
-            # 3. 카테고리 결정 (이미 필터링된 데이터이므로 간소화)
-            # 허용 카테고리 목록
-            allowed_categories = ["연애", "스포츠"]
-            if ENABLE_ECONOMY_CATEGORY:
-                allowed_categories.append("경제")
-
-            if target_category:
-                category = target_category
-            elif actual_category in allowed_categories:
-                category = actual_category
-            else:
-                # 키워드에서 추론
-                if any(kw in search_keyword for kw in ["연애", "연예", "커플", "결혼", "데이트"]):
-                    category = "연애"
-                elif any(kw in search_keyword for kw in ["스포츠", "야구", "축구", "농구", "손흥민", "이강인", "K리그", "프로야구"]):
-                    category = "스포츠"
-                elif ENABLE_ECONOMY_CATEGORY and any(kw in search_keyword for kw in ["주식", "부동산", "금리", "환율", "경제", "금융", "투자", "코스피"]):
-                    category = "경제"
-                else:
-                    category = "연애"  # 기본값
             
-            # 카테고리 통계 업데이트 (연애/스포츠만)
+            # 이미 지정된 카테고리 사용
+            category = result.get('_category', '')
+            search_keyword = result.get('_search_keyword', '')
+            
+            if not category:
+                category = KEYWORD_CATEGORY_MAP.get(search_keyword, '연애')
+            
+            # 카테고리 통계 업데이트
             if category in category_stats:
                 category_stats[category] = category_stats.get(category, 0) + 1
             
             # 데이터 수집 (나중에 배치 저장)
             rows_to_save.append([
-                result['title'],      # A열: 제목
-                result['content'],    # B열: 본문
-                result['link'],       # C열: 링크
-                category,             # D열: 카테고리
-                search_keyword        # DB 저장용 (시트에는 저장 안함)
+                result['title'],
+                result['content'],
+                result['link'],
+                category,
+                search_keyword
             ])
             count += 1
-            print(f"[OK] [{category}] {idx}/{len(news_results)} 준비 완료: {result['title'][:30]}...")
+            print(f"[OK] [{category}] {idx}/{len(shuffled_news_results)} 준비 완료: {result['title'][:30]}...")
 
         # 배치 저장 (API 호출 최소화)
         print(f"\n[UPLOAD] 구글 시트 배치 저장 중... (총 {len(rows_to_save)}개)")

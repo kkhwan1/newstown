@@ -58,8 +58,12 @@ def apply_config(config):
     """naver_to_sheet 모듈의 전역 변수 오버라이드"""
     import naver_to_sheet
 
-    # 카테고리별 수집 개수
+    # 카테고리별 수집 개수 (이것이 실제 저장할 개수!)
     category_counts = config.get('keywords', {})
+    
+    # 핵심: 카테고리별 목표 개수를 별도 변수로 전달
+    naver_to_sheet.CATEGORY_LIMITS = category_counts.copy()
+    log(f"카테고리별 목표 개수: 연애={category_counts.get('연애', 0)}, 경제={category_counts.get('경제', 0)}, 스포츠={category_counts.get('스포츠', 0)}")
     
     # category_keywords에서 실제 검색 키워드 생성
     if 'category_keywords' in config and category_counts:
@@ -67,17 +71,21 @@ def apply_config(config):
         keyword_map = {}
         
         for category, count in category_counts.items():
+            if count <= 0:
+                continue  # 0개면 해당 카테고리 스킵
+                
             cat_data = config['category_keywords'].get(category, {})
             core_kws = cat_data.get('core', [])
             general_kws = cat_data.get('general', [])
             
+            # 검색용 키워드 설정 (각 키워드당 충분히 검색)
             if core_kws:
-                per_keyword_count = max(1, count // len(core_kws))
+                search_count = max(5, count * 2)  # 충분히 검색
                 for kw in core_kws:
-                    search_keywords[kw] = per_keyword_count
+                    search_keywords[kw] = search_count
                     keyword_map[kw] = category
             else:
-                search_keywords[category] = count
+                search_keywords[category] = count * 2
                 keyword_map[category] = category
             
             for kw in general_kws:
@@ -86,20 +94,10 @@ def apply_config(config):
         if search_keywords:
             naver_to_sheet.KEYWORDS = search_keywords
             log(f"검색 키워드: {len(search_keywords)}개 설정됨")
-            for kw, cnt in search_keywords.items():
-                log(f"  - {kw}: {cnt}개")
         
         if keyword_map:
             naver_to_sheet.KEYWORD_CATEGORY_MAP = keyword_map
             log(f"카테고리 매핑: {len(keyword_map)}개 설정됨")
-            # 카테고리별 키워드 수 로깅
-            cat_counts = {"연애": 0, "경제": 0, "스포츠": 0}
-            for kw, cat in keyword_map.items():
-                if cat in cat_counts:
-                    cat_counts[cat] += 1
-            log(f"  - 연애: {cat_counts['연애']}개 키워드")
-            log(f"  - 경제: {cat_counts['경제']}개 키워드")
-            log(f"  - 스포츠: {cat_counts['스포츠']}개 키워드")
     
     elif 'keywords' in config:
         naver_to_sheet.KEYWORDS = config['keywords']
