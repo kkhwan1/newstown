@@ -450,6 +450,29 @@ def render_main_page():
     st.markdown("### 뉴스 수집")
     st.caption("네이버 API로 뉴스를 수집하여 DB와 스프레드시트에 저장합니다")
     
+    # 스케줄러 상태 표시
+    schedule_config = cm.get("news_schedule")
+    if schedule_config.get("enabled", False):
+        interval = schedule_config.get("interval_hours", 3)
+        last_run = schedule_config.get("last_run")
+        if last_run:
+            from datetime import datetime
+            try:
+                last_dt = datetime.fromisoformat(last_run)
+                next_dt = last_dt + __import__('datetime').timedelta(hours=interval)
+                now = datetime.now()
+                if next_dt > now:
+                    remaining = next_dt - now
+                    hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+                    minutes = remainder // 60
+                    st.info(f"자동 스케줄러 실행중: {interval}시간 간격 | 다음 수집까지 {hours}시간 {minutes}분")
+                else:
+                    st.info(f"자동 스케줄러 실행중: {interval}시간 간격 | 곧 수집 시작")
+            except:
+                st.info(f"자동 스케줄러 실행중: {interval}시간 간격")
+        else:
+            st.info(f"자동 스케줄러 실행중: {interval}시간 간격 | 첫 수집 대기중")
+    
     news_status = pm.get_status(PROC_NEWS)
     is_news_run = news_status['running']
     

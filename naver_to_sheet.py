@@ -886,6 +886,16 @@ def classify_news_category(title, description, content="", search_keyword=""):
     # 재난/사고/사회 뉴스가 연애로 분류되지 않도록 체크
     is_disaster_news = any(keyword in text_title or keyword in text_body for keyword in disaster_keywords)
     
+    # 정치 관련 키워드 (스포츠/연애로 절대 분류 안됨)
+    political_keywords = [
+        "정치", "선거", "국회", "정당", "정부", "대통령", "총리", "장관", "의원",
+        "여당", "야당", "청와대", "대통령실", "국무총리", "국무회의", "법안", "입법",
+        "탄핵", "개헌", "국정감사", "국정조사", "정책", "외교", "국방", "안보",
+        "한미", "한중", "한일", "북한", "남북", "통일", "핵", "미사일", "군사",
+        "민주당", "국민의힘", "진보", "보수", "좌파", "우파", "여의도"
+    ]
+    is_political_news = any(keyword in text_title or keyword in text_body for keyword in political_keywords)
+    
     # 음악/문화 관련 키워드 체크 (스포츠로 잘못 분류 방지)
     music_culture_keywords = [
         "음악", "노래", "가수", "앨범", "음반", "싱글", "차트", "플레이리스트",
@@ -901,6 +911,12 @@ def classify_news_category(title, description, content="", search_keyword=""):
     # 0단계: 재난/사고/사회 뉴스는 연애로 분류하지 않음 (연애 점수 대폭 감점)
     if is_disaster_news:
         scores["연애"] -= 100  # 재난 뉴스는 절대 연애로 분류되지 않도록
+    
+    # 0-0단계: 정치 뉴스는 스포츠/연애로 절대 분류 안됨 (경제로 분류)
+    if is_political_news:
+        scores["연애"] -= 200  # 정치 뉴스는 절대 연애로 분류되지 않도록
+        scores["스포츠"] -= 200  # 정치 뉴스는 절대 스포츠로 분류되지 않도록
+        scores["경제"] += 50  # 정치 뉴스는 경제로 분류
     
     # 0-1단계: 음악/문화 뉴스는 스포츠로 분류하지 않음 (스포츠 점수 대폭 감점)
     if is_music_culture_news:
