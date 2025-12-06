@@ -2,6 +2,7 @@
 """
 프로세스 생명주기 관리 모듈
 서브프로세스 시작, 중지, 상태 추적을 담당
+파일 기반 상태 저장으로 세션 간 프로세스 추적 유지
 """
 import subprocess
 import sys
@@ -11,109 +12,152 @@ import json
 import time
 from datetime import datetime
 from typing import Dict, Optional, Any
+from pathlib import Path
 
 
 class ProcessManager:
-    """서브프로세스 생명주기를 관리하는 클래스"""
+    """서브프로세스 생명주기를 관리하는 클래스 (파일 기반 상태 저장)"""
+    
+    STATUS_FILE = "/tmp/process_status.json"
+    LOG_DIR = "/tmp/process_logs"
 
     def __init__(self):
         self._processes: Dict[str, subprocess.Popen] = {}
-        self._start_times: Dict[str, datetime] = {}
-        self._configs: Dict[str, Dict[str, Any]] = {}
+        self._ensure_log_dir()
+        self._restore_processes()
+
+    def _ensure_log_dir(self):
+        """로그 디렉토리 생성"""
+        Path(self.LOG_DIR).mkdir(parents=True, exist_ok=True)
+
+    def _get_log_file(self, name: str) -> str:
+        """프로세스별 로그 파일 경로"""
+        return os.path.join(self.LOG_DIR, f"{name}.log")
+
+    def _load_status(self) -> Dict[str, Any]:
+        """파일에서 상태 로드"""
+        try:
+            if os.path.exists(self.STATUS_FILE):
+                with open(self.STATUS_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _save_status(self, name: str, pid: int, start_time: str, config: Optional[Dict] = None):
+        """상태를 파일에 저장"""
+        try:
+            status = self._load_status()
+            status[name] = {
+                'pid': pid,
+                'start_time': start_time,
+                'config': config
+            }
+            with open(self.STATUS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(status, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"상태 저장 실패: {e}")
+
+    def _remove_status(self, name: str):
+        """상태에서 프로세스 제거"""
+        try:
+            status = self._load_status()
+            if name in status:
+                del status[name]
+                with open(self.STATUS_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(status, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _check_pid_exists(self, pid: int) -> bool:
+        """PID가 실제로 존재하는지 확인"""
+        if pid is None:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def _restore_processes(self):
+        """파일에서 저장된 프로세스 상태 복원"""
+        status = self._load_status()
+        for name, info in list(status.items()):
+            pid = info.get('pid')
+            if pid and self._check_pid_exists(pid):
+                pass
+            else:
+                self._remove_status(name)
 
     def start_process(self, name: str, script_path: str, config: Optional[Dict[str, Any]] = None) -> bool:
-        """프로세스 시작
-
-        Args:
-            name: 프로세스 식별자
-            script_path: 실행할 스크립트 경로
-            config: 환경 변수로 전달할 설정 (JSON 직렬화됨)
-
-        Returns:
-            bool: 시작 성공 여부
-        """
+        """프로세스 시작"""
         if self.is_running(name):
-            print(f"⚠️ {name} 프로세스가 이미 실행 중입니다.")
+            print(f"[WARN] {name} 프로세스가 이미 실행 중입니다.")
             return False
 
         try:
-            # 환경 변수 설정
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
 
             if config:
                 env['PROCESS_CONFIG'] = json.dumps(config, ensure_ascii=False)
-                self._configs[name] = config
 
-            # Windows에서 프로세스 그룹 생성을 위한 플래그
-            creation_flags = 0
-            if sys.platform == 'win32':
-                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            log_file = open(self._get_log_file(name), 'w', encoding='utf-8')
 
-            # 프로세스 시작
             process = subprocess.Popen(
                 [sys.executable, script_path],
                 env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                creationflags=creation_flags if sys.platform == 'win32' else 0,
-                cwd=os.path.dirname(script_path) or os.getcwd()
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                cwd=os.path.dirname(script_path) or os.getcwd(),
+                start_new_session=True
             )
 
             self._processes[name] = process
-            self._start_times[name] = datetime.now()
+            start_time = datetime.now().isoformat()
+            self._save_status(name, process.pid, start_time, config)
 
-            print(f"✅ {name} 프로세스 시작됨 (PID: {process.pid})")
+            print(f"[OK] {name} 프로세스 시작됨 (PID: {process.pid})")
             return True
 
         except Exception as e:
-            print(f"❌ {name} 프로세스 시작 실패: {e}")
+            print(f"[ERROR] {name} 프로세스 시작 실패: {e}")
             return False
 
     def stop_process(self, name: str, timeout: float = 10.0) -> bool:
-        """프로세스 중지 (graceful shutdown 시도)
-
-        Args:
-            name: 프로세스 식별자
-            timeout: 종료 대기 시간 (초)
-
-        Returns:
-            bool: 중지 성공 여부
-        """
-        if not self.is_running(name):
-            print(f"⚠️ {name} 프로세스가 실행 중이 아닙니다.")
-            return True
-
+        """프로세스 중지"""
+        status = self._load_status()
+        info = status.get(name, {})
+        pid = info.get('pid')
+        
         process = self._processes.get(name)
-        if not process:
+        
+        if not pid and not process:
+            print(f"[WARN] {name} 프로세스가 실행 중이 아닙니다.")
             return True
 
         try:
-            # Windows에서는 CTRL_BREAK_EVENT, 그 외는 SIGTERM
-            if sys.platform == 'win32':
-                # Windows: CTRL_BREAK_EVENT 전송
-                os.kill(process.pid, signal.CTRL_BREAK_EVENT)
-            else:
-                # Unix: SIGTERM 전송
-                process.send_signal(signal.SIGTERM)
+            target_pid = process.pid if process else pid
+            
+            if target_pid and self._check_pid_exists(target_pid):
+                os.kill(target_pid, signal.SIGTERM)
+                
+                end_time = time.time() + timeout
+                while time.time() < end_time:
+                    if not self._check_pid_exists(target_pid):
+                        break
+                    time.sleep(0.5)
+                
+                if self._check_pid_exists(target_pid):
+                    os.kill(target_pid, signal.SIGKILL)
+                    time.sleep(1)
 
-            # 종료 대기
-            try:
-                process.wait(timeout=timeout)
-                print(f"✅ {name} 프로세스 정상 종료됨")
-            except subprocess.TimeoutExpired:
-                # 강제 종료
-                print(f"⚠️ {name} 프로세스 응답 없음, 강제 종료 중...")
-                process.kill()
-                process.wait(timeout=5)
-                print(f"✅ {name} 프로세스 강제 종료됨")
-
-            # 정리
             self._cleanup_process(name)
+            print(f"[OK] {name} 프로세스 종료됨")
             return True
 
         except Exception as e:
-            print(f"❌ {name} 프로세스 중지 실패: {e}")
+            print(f"[ERROR] {name} 프로세스 중지 실패: {e}")
             self._cleanup_process(name)
             return False
 
@@ -121,84 +165,89 @@ class ProcessManager:
         """프로세스 관련 데이터 정리"""
         if name in self._processes:
             del self._processes[name]
-        if name in self._start_times:
-            del self._start_times[name]
+        self._remove_status(name)
 
     def is_running(self, name: str) -> bool:
-        """프로세스 실행 상태 확인
-
-        Args:
-            name: 프로세스 식별자
-
-        Returns:
-            bool: 실행 중이면 True
-        """
+        """프로세스 실행 상태 확인 (파일 + 실제 PID 체크)"""
         process = self._processes.get(name)
-        if not process:
-            return False
-
-        # poll()이 None이면 아직 실행 중
-        if process.poll() is None:
+        if process:
+            if process.poll() is None:
+                return True
+            else:
+                self._cleanup_process(name)
+                return False
+        
+        status = self._load_status()
+        info = status.get(name, {})
+        pid = info.get('pid')
+        
+        if pid and self._check_pid_exists(pid):
             return True
-
-        # 프로세스가 종료됨 - 정리
-        self._cleanup_process(name)
+        elif pid:
+            self._remove_status(name)
+        
         return False
 
     def get_runtime(self, name: str) -> Optional[str]:
-        """프로세스 실행 시간 반환
-
-        Args:
-            name: 프로세스 식별자
-
-        Returns:
-            str: 실행 시간 문자열 (HH:MM:SS 형식) 또는 None
-        """
+        """프로세스 실행 시간 반환"""
         if not self.is_running(name):
             return None
 
-        start_time = self._start_times.get(name)
-        if not start_time:
+        status = self._load_status()
+        info = status.get(name, {})
+        start_time_str = info.get('start_time')
+        
+        if not start_time_str:
             return None
 
-        elapsed = datetime.now() - start_time
-        hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        try:
+            start_time = datetime.fromisoformat(start_time_str)
+            elapsed = datetime.now() - start_time
+            hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        except Exception:
+            return None
 
     def get_status(self, name: str) -> Dict[str, Any]:
-        """프로세스 상태 정보 반환
-
-        Args:
-            name: 프로세스 식별자
-
-        Returns:
-            dict: 상태 정보 (running, pid, runtime, config)
-        """
+        """프로세스 상태 정보 반환"""
         running = self.is_running(name)
-        process = self._processes.get(name)
+        status = self._load_status()
+        info = status.get(name, {})
 
         return {
             'running': running,
-            'pid': process.pid if process and running else None,
+            'pid': info.get('pid') if running else None,
             'runtime': self.get_runtime(name),
-            'config': self._configs.get(name),
-            'start_time': self._start_times.get(name).isoformat() if name in self._start_times else None
+            'config': info.get('config'),
+            'start_time': info.get('start_time')
         }
+
+    def get_logs(self, name: str, lines: int = 50) -> str:
+        """프로세스 로그 읽기"""
+        log_file = self._get_log_file(name)
+        try:
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    all_lines = f.readlines()
+                    return ''.join(all_lines[-lines:])
+        except Exception:
+            pass
+        return ""
 
     def get_all_status(self) -> Dict[str, Dict[str, Any]]:
         """모든 프로세스 상태 반환"""
-        all_names = set(self._processes.keys()) | set(self._start_times.keys())
+        status = self._load_status()
+        all_names = set(status.keys()) | set(self._processes.keys())
         return {name: self.get_status(name) for name in all_names}
 
     def stop_all(self):
         """모든 프로세스 중지"""
-        for name in list(self._processes.keys()):
+        status = self._load_status()
+        for name in list(status.keys()):
             self.stop_process(name)
 
 
-# 전역 프로세스 매니저 인스턴스 (Streamlit 세션 간 공유용)
 _global_manager: Optional[ProcessManager] = None
 
 def get_process_manager() -> ProcessManager:
