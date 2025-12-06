@@ -218,6 +218,13 @@ def upload_to_newstown(title, content, category=None):
             
             sub_section_select.select_by_visible_text(sub_section_text)
             print(f"✅ 2차 섹션 선택: {sub_section_text} (카테고리: {category if category else '기본값'})")
+            time.sleep(1.5)  # 3차 섹션 옵션이 로드될 때까지 대기
+            
+            # 3차 섹션(연재) 드롭다운 찾기 및 선택
+            serial_element = wait.until(EC.presence_of_element_located((By.NAME, "serialCode")))
+            serial_select = Select(serial_element)
+            serial_select.select_by_visible_text("일반뉴스")
+            print("✅ 3차 섹션 선택: 일반뉴스")
             time.sleep(0.5)  # 선택 완료 대기
         except Exception as e:
             print(f"⚠️ 섹션 선택 중 경고: {e}")
