@@ -1852,8 +1852,8 @@ def main():
                 result['title'],      # A열: 제목
                 result['content'],    # B열: 본문
                 result['link'],       # C열: 링크
-                category,             # D열: 대분류 카테고리
-                search_keyword        # E열: 검색 키워드
+                category,             # D열: 카테고리
+                search_keyword        # DB 저장용 (시트에는 저장 안함)
             ])
             count += 1
             print(f"[OK] [{category}] {idx}/{len(news_results)} 준비 완료: {result['title'][:30]}...")
@@ -1876,8 +1876,9 @@ def main():
 
                 while retry_count < max_retries:
                     try:
-                        # 배치 저장 (append_rows 사용)
-                        sheet.append_rows(batch, value_input_option='RAW')
+                        # 배치 저장 (append_rows 사용) - A~D열만 저장 (E열 검색키워드 제외)
+                        sheet_batch = [[row[0], row[1], row[2], row[3]] for row in batch]
+                        sheet.append_rows(sheet_batch, value_input_option='RAW')
                         saved_count += len(batch)
                         print(f"   [OK] 배치 {batch_num}/{total_batches} 저장 완료 ({len(batch)}개, 총 {saved_count}/{len(rows_to_save)}개)")
                         

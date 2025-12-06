@@ -150,7 +150,7 @@ def save_news_to_db_and_sheet(news_list, category, search_keyword=None):
                 creds = ServiceAccountCredentials.from_json_keyfile_name(str(creds_path), scope)
                 client = gspread.authorize(creds)
                 sheet = client.open_by_url(sheet_url).sheet1
-                rows = [[n['title'], n['content'], n['link'], category, search_keyword or ''] for n in news_list]
+                rows = [[n['title'], n['content'], n['link'], category] for n in news_list]
                 if rows:
                     sheet.append_rows(rows, value_input_option='RAW')
         except Exception as e:
