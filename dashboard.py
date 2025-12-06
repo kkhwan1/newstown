@@ -450,8 +450,17 @@ def render_main_page():
     st.markdown("### 뉴스 수집")
     st.caption("네이버 API로 뉴스를 수집하여 DB와 스프레드시트에 저장합니다")
     
-    # 스케줄러 상태 표시
+    # 스케줄러 및 수집 설정 상태 표시
     schedule_config = cm.get("news_schedule")
+    news_config = cm.get("news_collection")
+    sort_option = news_config.get("sort", "sim")
+    sort_text = "인기순" if sort_option == "sim" else "최신순"
+    pub_keywords = news_config.get("keywords", {"연애": 15, "경제": 15, "스포츠": 15})
+    total_count = sum(pub_keywords.values())
+    
+    # 수집 설정 요약 표시
+    settings_text = f"정렬: {sort_text} | 총 {total_count}개 (연애 {pub_keywords.get('연애', 15)}, 경제 {pub_keywords.get('경제', 15)}, 스포츠 {pub_keywords.get('스포츠', 15)})"
+    
     if schedule_config.get("enabled", False):
         interval = schedule_config.get("interval_hours", 3)
         last_run = schedule_config.get("last_run")
@@ -465,13 +474,16 @@ def render_main_page():
                     remaining = next_dt - now
                     hours, remainder = divmod(int(remaining.total_seconds()), 3600)
                     minutes = remainder // 60
-                    st.info(f"자동 스케줄러 실행중: {interval}시간 간격 | 다음 수집까지 {hours}시간 {minutes}분")
+                    st.success(f"자동 스케줄러 ON: {interval}시간 간격 | 다음 수집까지 {hours}시간 {minutes}분")
                 else:
-                    st.info(f"자동 스케줄러 실행중: {interval}시간 간격 | 곧 수집 시작")
+                    st.success(f"자동 스케줄러 ON: {interval}시간 간격 | 곧 수집 시작")
             except:
-                st.info(f"자동 스케줄러 실행중: {interval}시간 간격")
+                st.success(f"자동 스케줄러 ON: {interval}시간 간격")
         else:
-            st.info(f"자동 스케줄러 실행중: {interval}시간 간격 | 첫 수집 대기중")
+            st.success(f"자동 스케줄러 ON: {interval}시간 간격 | 첫 수집 대기중")
+        st.caption(f"수집 설정: {settings_text}")
+    else:
+        st.caption(f"수집 설정: {settings_text} (스케줄러 OFF - 수동 수집만 가능)")
     
     news_status = pm.get_status(PROC_NEWS)
     is_news_run = news_status['running']
