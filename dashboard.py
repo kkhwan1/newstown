@@ -415,10 +415,20 @@ def render_main_page():
             news_logs = pm.get_logs(PROC_NEWS, lines=50)
             if news_logs:
                 st.code(news_logs, language="text")
+                # 수집 완료 메시지 확인 시 자동 새로고침
+                if "[완료] 수집 완료 요약" in news_logs:
+                    import time
+                    time.sleep(1)
+                    st.rerun()
             else:
                 st.caption("로그가 없습니다")
             if st.button("새로고침", key="refresh_news_log"):
                 st.rerun()
+        
+        # 5초마다 자동 새로고침 (수집 중일 때만)
+        import time
+        time.sleep(5)
+        st.rerun()
 
     st.markdown("---")
     
