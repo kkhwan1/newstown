@@ -389,6 +389,12 @@ def render_main_page():
     cm = st.session_state.config_manager
 
     st.markdown("# 대시보드")
+    
+    col_link1, col_link2, col_link3 = st.columns([1, 1, 2])
+    with col_link1:
+        st.link_button("스프레드시트", "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit?gid=0#gid=0", use_container_width=True)
+    with col_link2:
+        st.link_button("Make 시나리오", "https://eu2.make.com/318441/scenarios/8251433/edit", use_container_width=True)
 
     category_keywords = cm.get("category_keywords", default={})
     news_config = cm.get("news_collection")
