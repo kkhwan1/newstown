@@ -34,28 +34,39 @@ if sys.platform == 'win32':
 print("🚀 스크립트 시작 중...", flush=True)
 
 # ==========================================
-# 🔴 설정 구역 (여기를 반드시 수정하세요)
+# 🔴 설정 구역 (환경변수 또는 기본값)
 # ==========================================
+import os
+import json
+
+# 환경변수에서 설정 로드 (대시보드에서 전달)
+_process_config = {}
+if os.environ.get('PROCESS_CONFIG'):
+    try:
+        _process_config = json.loads(os.environ.get('PROCESS_CONFIG', '{}'))
+    except:
+        pass
+
 # 1. 구글 시트 전체 주소
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit"
+SHEET_URL = _process_config.get('sheet_url', "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit")
 
 # 2. 뉴스타운 아이디 / 비밀번호
-SITE_ID = "kim123"
-SITE_PW = "love1105()"
+SITE_ID = _process_config.get('site_id', "kim123")
+SITE_PW = _process_config.get('site_pw', "love1105()")
 
 # 3. 업로드 완료 표시 열 (H열=8번째 열, 업로드 완료 시 "완료" 표시)
 COMPLETED_COLUMN = 8  # H열
 
 # 4. 감시 간격 (초 단위)
-CHECK_INTERVAL = 30  # 30초마다 시트 확인
+CHECK_INTERVAL = _process_config.get('check_interval', 30)
 
 # 5. API 재시도 설정
 MAX_RETRIES = 5  # 최대 재시도 횟수
 INITIAL_RETRY_DELAY = 60  # 초기 재시도 대기 시간 (초) - 할당량 초과 시 60초 대기
 MAX_RETRY_DELAY = 300  # 최대 재시도 대기 시간 (초) - 최대 5분까지 대기
 
-# 6. 동시 업로드 개수 설정
-CONCURRENT_UPLOADS = 2  # 동시에 업로드할 뉴스 개수 (1~3)
+# 6. 동시 업로드 개수 설정 (대시보드에서 설정 가능)
+CONCURRENT_UPLOADS = _process_config.get('concurrent_uploads', 2)  # 동시에 업로드할 뉴스 개수 (1~3)
 # ==========================================
 
 def retry_with_backoff(func, *args, **kwargs):

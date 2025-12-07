@@ -1271,9 +1271,11 @@ def render_settings_page():
         st.markdown("### 자동화 간격")
         check = st.number_input("업로드 체크 (초)", min_value=10, max_value=600, value=cm.get("upload_monitor", "check_interval", 30))
         delete = st.number_input("삭제 간격 (분)", min_value=1, max_value=1440, value=cm.get("row_deletion", "delete_interval", 60))
+        concurrent = st.number_input("동시 업로드 개수", min_value=1, max_value=3, value=cm.get("upload_monitor", "concurrent_uploads", 2), help="뉴스타운에 동시에 업로드할 뉴스 개수 (1~3개)")
         if st.button("저장", key="save_interval"):
             cm.set("upload_monitor", "check_interval", check)
             cm.set("row_deletion", "delete_interval", delete)
+            cm.set("upload_monitor", "concurrent_uploads", concurrent)
             st.success("저장됨")
         
         # 네이버 API 사용량 표시
