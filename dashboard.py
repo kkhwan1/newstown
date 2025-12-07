@@ -1087,43 +1087,67 @@ def render_prompt_page():
     try:
         from utils.database import get_prompts, save_prompt, update_prompt, delete_prompt
         
-        with st.expander("새 프롬프트"):
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                name = st.text_input("이름", placeholder="프롬프트 이름")
-            with c2:
-                cat = st.selectbox("카테고리", ["전체", "연애", "경제", "스포츠"], key="p_cat")
-            content = st.text_area("내용", height=80, placeholder="프롬프트 내용...")
-            if st.button("추가", type="primary"):
-                if name and content:
-                    save_prompt(name, cat, content)
-                    st.rerun()
-
         prompts = get_prompts(active_only=False)
+        
+        # 저장된 프롬프트 목록
+        st.markdown("### 저장된 프롬프트")
         if prompts:
-            data = []
-            for p in prompts:
-                data.append({
-                    "이름": p['name'],
-                    "카테고리": p.get('category', '전체'),
-                    "상태": "활성" if p.get('is_active') else "비활성"
-                })
-            st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+            st.caption(f"총 {len(prompts)}개의 프롬프트")
             
-            with st.expander("편집/삭제"):
-                sel_prompt = st.selectbox("프롬프트 선택", [p['name'] for p in prompts])
-                sel_p = next((p for p in prompts if p['name'] == sel_prompt), None)
-                if sel_p:
-                    edited = st.text_area("내용", value=sel_p.get('prompt_text', ''), height=80)
-                    c1, c2 = st.columns(2)
+            for p in prompts:
+                with st.expander(f"**{p['name']}** ({p.get('category', '전체')}) - {'활성' if p.get('is_active') else '비활성'}"):
+                    st.markdown("**프롬프트 내용:**")
+                    st.text_area("내용 보기", value=p.get('prompt_text', ''), height=150, key=f"view_{p['id']}", disabled=True)
+                    
+                    st.markdown("---")
+                    st.markdown("**편집:**")
+                    
+                    c1, c2 = st.columns([3, 1])
                     with c1:
-                        if st.button("저장"):
-                            update_prompt(sel_p['id'], prompt_text=edited)
-                            st.success("저장됨")
+                        new_name = st.text_input("이름", value=p['name'], key=f"name_{p['id']}")
                     with c2:
-                        if st.button("삭제"):
-                            delete_prompt(sel_p['id'])
+                        cats = ["전체", "연애", "경제", "스포츠"]
+                        current_cat = p.get('category', '전체')
+                        cat_idx = cats.index(current_cat) if current_cat in cats else 0
+                        new_cat = st.selectbox("카테고리", cats, index=cat_idx, key=f"cat_{p['id']}")
+                    
+                    new_content = st.text_area("내용 수정", value=p.get('prompt_text', ''), height=120, key=f"edit_{p['id']}")
+                    
+                    is_active = st.checkbox("활성화", value=p.get('is_active', True), key=f"active_{p['id']}")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button("저장", key=f"save_{p['id']}", type="primary"):
+                            update_prompt(p['id'], name=new_name, category=new_cat, prompt_text=new_content, is_active=is_active)
+                            st.success("저장됨")
                             st.rerun()
+                    with col2:
+                        pass
+                    with col3:
+                        if st.button("삭제", key=f"del_{p['id']}"):
+                            delete_prompt(p['id'])
+                            st.rerun()
+        else:
+            st.info("저장된 프롬프트가 없습니다.")
+        
+        st.markdown("---")
+        
+        # 새 프롬프트 추가
+        st.markdown("### 새 프롬프트 추가")
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            name = st.text_input("이름", placeholder="프롬프트 이름", key="new_prompt_name")
+        with c2:
+            cat = st.selectbox("카테고리", ["전체", "연애", "경제", "스포츠"], key="new_prompt_cat")
+        content = st.text_area("내용", height=120, placeholder="프롬프트 내용을 입력하세요...", key="new_prompt_content")
+        if st.button("추가", type="primary", key="add_prompt_btn"):
+            if name and content:
+                save_prompt(name, cat, content)
+                st.success(f"'{name}' 프롬프트가 추가되었습니다.")
+                st.rerun()
+            else:
+                st.warning("이름과 내용을 모두 입력해주세요.")
+                
     except Exception as e:
         st.error(f"오류: {e}")
 
