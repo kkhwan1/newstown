@@ -1031,38 +1031,62 @@ def render_search_page():
         
         total_results = len(st.session_state.search_results)
         
+        # 체크박스 상태를 session_state에서 동기화
+        for idx in range(total_results):
+            key = f"news_sel_{idx}"
+            if key not in st.session_state:
+                st.session_state[key] = idx in st.session_state.selected_news
+        
+        # 버튼 콜백 함수들
+        def select_all_callback():
+            for idx in range(total_results):
+                st.session_state[f"news_sel_{idx}"] = True
+            st.session_state.selected_news = set(range(total_results))
+        
+        def deselect_all_callback():
+            for idx in range(total_results):
+                st.session_state[f"news_sel_{idx}"] = False
+            st.session_state.selected_news = set()
+        
+        def save_all_callback():
+            all_news = st.session_state.search_results
+            saved = save_news_to_db_and_sheet(all_news, save_category, search_keyword=save_keyword)
+            st.session_state.save_message = f"전체 {saved}개 저장 완료! (카테고리: {save_category})"
+            # 체크박스 상태 초기화
+            for idx in range(total_results):
+                if f"news_sel_{idx}" in st.session_state:
+                    del st.session_state[f"news_sel_{idx}"]
+            st.session_state.search_results = []
+            st.session_state.selected_news = set()
+            st.session_state.current_search_keyword = ''
+            st.session_state.current_search_category = ''
+        
+        # 저장 메시지 표시
+        if 'save_message' in st.session_state and st.session_state.save_message:
+            st.success(st.session_state.save_message)
+            st.session_state.save_message = ''
+        
         c1, c2, c3 = st.columns([1.5, 1, 1])
         with c1:
-            if st.button(f"전체 선택 + 저장 ({total_results}개)", type="primary", key="save_all_btn"):
-                all_news = st.session_state.search_results
-                saved = save_news_to_db_and_sheet(all_news, save_category, search_keyword=save_keyword)
-                st.success(f"전체 {saved}개 저장 완료! (카테고리: {save_category})")
-                st.session_state.search_results = []
-                st.session_state.selected_news = set()
-                st.session_state.current_search_keyword = ''
-                st.session_state.current_search_category = ''
-                st.rerun()
+            st.button(f"전체 선택 + 저장 ({total_results}개)", type="primary", key="save_all_btn", on_click=save_all_callback)
         with c2:
-            if st.button("전체 선택", key="select_all_btn"):
-                st.session_state.selected_news = set(range(total_results))
-                st.rerun()
+            st.button("전체 선택", key="select_all_btn", on_click=select_all_callback)
         with c3:
-            if st.button("선택 해제", key="deselect_btn"):
-                st.session_state.selected_news = set()
-                st.rerun()
+            st.button("선택 해제", key="deselect_btn", on_click=deselect_all_callback)
+        
+        # selected_news를 체크박스 상태에서 동기화
+        current_selected = set()
+        for idx in range(total_results):
+            if st.session_state.get(f"news_sel_{idx}", False):
+                current_selected.add(idx)
+        st.session_state.selected_news = current_selected
         
         st.caption(f"검색 결과: {total_results}개 | 선택됨: {len(st.session_state.selected_news)}개")
         
         for idx, news in enumerate(st.session_state.search_results):
-            is_selected = idx in st.session_state.selected_news
             col1, col2 = st.columns([0.05, 0.95])
             with col1:
-                sel = st.checkbox("선택", value=is_selected, key=f"news_sel_{idx}", label_visibility="collapsed")
-                if sel != is_selected:
-                    if sel:
-                        st.session_state.selected_news.add(idx)
-                    else:
-                        st.session_state.selected_news.discard(idx)
+                st.checkbox("선택", key=f"news_sel_{idx}", label_visibility="collapsed")
             with col2:
                 st.markdown(f'<div class="search-item"><b>{news["title"]}</b><br><small>{news["content"][:100]}...</small></div>', unsafe_allow_html=True)
 
@@ -1074,6 +1098,10 @@ def render_search_page():
                 selected = [st.session_state.search_results[i] for i in sorted(st.session_state.selected_news)]
                 saved = save_news_to_db_and_sheet(selected, save_category, search_keyword=save_keyword)
                 st.success(f"{saved}개 저장됨 (대분류: {save_category}, 검색어: {save_keyword})")
+                # 체크박스 상태 초기화
+                for idx in range(total_results):
+                    if f"news_sel_{idx}" in st.session_state:
+                        del st.session_state[f"news_sel_{idx}"]
                 st.session_state.search_results = []
                 st.session_state.selected_news = set()
                 st.session_state.current_search_keyword = ''
