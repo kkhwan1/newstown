@@ -131,6 +131,55 @@ CATEGORY_LIMITS = {
 
 # ==========================================
 
+API_USAGE_FILE = Path(__file__).parent / "config" / "api_usage.json"
+
+def load_api_usage():
+    """API 사용량 로드"""
+    try:
+        if API_USAGE_FILE.exists():
+            with open(API_USAGE_FILE, 'r') as f:
+                data = json.load(f)
+                # 날짜가 오늘이 아니면 리셋
+                today = datetime.now().strftime('%Y-%m-%d')
+                if data.get('date') != today:
+                    return {'date': today, 'calls': 0, 'news_count': 0}
+                return data
+    except:
+        pass
+    return {'date': datetime.now().strftime('%Y-%m-%d'), 'calls': 0, 'news_count': 0}
+
+def save_api_usage(data):
+    """API 사용량 저장"""
+    try:
+        API_USAGE_FILE.parent.mkdir(exist_ok=True)
+        with open(API_USAGE_FILE, 'w') as f:
+            json.dump(data, f)
+    except:
+        pass
+
+def increment_api_call(news_count=0):
+    """API 호출 횟수 증가"""
+    data = load_api_usage()
+    data['calls'] = data.get('calls', 0) + 1
+    data['news_count'] = data.get('news_count', 0) + news_count
+    save_api_usage(data)
+    return data
+
+def get_api_usage_info():
+    """API 사용량 정보 반환"""
+    data = load_api_usage()
+    daily_limit = 25000  # 네이버 API 일일 한도
+    calls = data.get('calls', 0)
+    remaining = max(0, daily_limit - calls)
+    return {
+        'date': data.get('date', ''),
+        'calls': calls,
+        'news_count': data.get('news_count', 0),
+        'daily_limit': daily_limit,
+        'remaining': remaining,
+        'usage_percent': round((calls / daily_limit) * 100, 1) if daily_limit > 0 else 0
+    }
+
 def get_naver_news(keyword, display=20, sort='date'):
     """네이버 뉴스 검색 함수
     
@@ -153,9 +202,14 @@ def get_naver_news(keyword, display=20, sort='date'):
         
         if(rescode == 200):
             response_body = response.read()
-            return json.loads(response_body.decode('utf-8'))
+            result = json.loads(response_body.decode('utf-8'))
+            # API 호출 기록
+            news_count = len(result.get('items', [])) if result else 0
+            increment_api_call(news_count)
+            return result
         else:
             print(f"[ERROR] Error Code: {rescode}")
+            increment_api_call(0)
             return None
     except Exception as e:
         print(f"[ERROR] 네이버 API 요청 실패: {e}")

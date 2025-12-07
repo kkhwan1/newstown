@@ -1276,9 +1276,33 @@ def render_settings_page():
             cm.set("row_deletion", "delete_interval", delete)
             st.success("저장됨")
         
+        # 네이버 API 사용량 표시
+        st.markdown("### 네이버 API 사용량")
+        try:
+            from naver_to_sheet import get_api_usage_info
+            usage = get_api_usage_info()
+            
+            st.caption(f"날짜: {usage['date']}")
+            
+            # 프로그레스 바
+            progress = usage['usage_percent'] / 100
+            st.progress(min(progress, 1.0))
+            
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("API 호출", f"{usage['calls']:,}회")
+            with col_b:
+                st.metric("수집 뉴스", f"{usage['news_count']:,}개")
+            with col_c:
+                st.metric("남은 한도", f"{usage['remaining']:,}회")
+            
+            st.caption(f"일일 한도: {usage['daily_limit']:,}회 ({usage['usage_percent']}% 사용)")
+        except Exception as e:
+            st.caption(f"API 사용량 조회 실패: {e}")
+        
         # 네이버 API 설정 (관리자만 표시)
         if is_admin():
-            st.markdown("### 네이버 API")
+            st.markdown("### 네이버 API 설정")
             st.caption("config/naver_api.json 파일에 저장됨")
             api = load_naver_api()
             cid = st.text_input("Client ID", value=api.get('client_id', ''))
