@@ -10,6 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import time
 import random
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 한국 시간대 (KST = UTC+9)
 KST = timezone(timedelta(hours=9))
@@ -52,6 +53,9 @@ CHECK_INTERVAL = 30  # 30초마다 시트 확인
 MAX_RETRIES = 5  # 최대 재시도 횟수
 INITIAL_RETRY_DELAY = 60  # 초기 재시도 대기 시간 (초) - 할당량 초과 시 60초 대기
 MAX_RETRY_DELAY = 300  # 최대 재시도 대기 시간 (초) - 최대 5분까지 대기
+
+# 6. 동시 업로드 개수 설정
+CONCURRENT_UPLOADS = 2  # 동시에 업로드할 뉴스 개수 (1~3)
 # ==========================================
 
 def retry_with_backoff(func, *args, **kwargs):
@@ -313,85 +317,129 @@ def upload_to_newstown(title, content, category=None):
         # 브라우저 닫기
         driver.quit()
 
-def check_and_upload(sheet):
-    """시트를 확인하고 업로드할 항목이 있으면 업로드하는 함수
+def upload_single_item(item_data):
+    """단일 항목을 업로드하는 함수 (ThreadPoolExecutor에서 호출)
+    
+    Args:
+        item_data: dict with row_num, ai_title, ai_content, category, link
     
     Returns:
-        True: 업로드 성공
+        dict with row_num, success, link
+    """
+    row_num = item_data['row_num']
+    ai_title = item_data['ai_title']
+    ai_content = item_data['ai_content']
+    category = item_data['category']
+    link = item_data['link']
+    
+    print(f"\n[{get_kst_time()}] [스레드] 행 {row_num}번 업로드 시작")
+    print(f"   D열(카테고리): {category if category else '(없음)'}")
+    print(f"   E열(AI_제목): {ai_title[:50]}...")
+    
+    success = upload_to_newstown(ai_title, ai_content, category if category else None)
+    
+    return {
+        'row_num': row_num,
+        'success': success,
+        'link': link
+    }
+
+def check_and_upload(sheet):
+    """시트를 확인하고 업로드할 항목이 있으면 동시에 업로드하는 함수
+    
+    Returns:
+        True: 업로드 성공 (1개 이상)
         False: 업로드 실패
         None: 업로드할 항목 없음 (E열/F열 비어있음)
     """
     try:
-        # 모든 데이터 가져오기 (매번 새로 가져와서 최신 상태 확인) - 재시도 로직 적용
         rows = retry_with_backoff(sheet.get_all_values)
         
-        # 2번째 행부터 루프 (1행은 헤더)
+        items_to_upload = []
+        
         for i, row in enumerate(rows[1:], start=2):
-            # 행 데이터 길이 확인
-            if len(row) < 6:  # E열(인덱스 4), F열(인덱스 5)까지 최소 필요
-                continue  # 데이터가 부족하면 건너뛰기
-            
-            # 각 열 데이터 가져오기 (빈 값 체크)
-            category = row[3].strip() if len(row) > 3 and row[3] else ""  # D열 (인덱스 3) - 카테고리
-            ai_title = row[4].strip() if len(row) > 4 and row[4] else ""  # E열 (인덱스 4)
-            ai_content = row[5].strip() if len(row) > 5 and row[5] else ""  # F열 (인덱스 5)
-            
-            # E열과 F열에 데이터가 있는지 엄격하게 체크 (빈 문자열, 공백만 있는 경우 제외)
-            if not ai_title or not ai_content:
-                # E열 또는 F열이 비어있으면 이 행은 건너뛰기 (다음 행 확인)
+            if len(row) < 6:
                 continue
             
-            # H열(완료 표시 열) 확인 - 이미 업로드된 항목인지 체크
+            category = row[3].strip() if len(row) > 3 and row[3] else ""
+            ai_title = row[4].strip() if len(row) > 4 and row[4] else ""
+            ai_content = row[5].strip() if len(row) > 5 and row[5] else ""
+            
+            if not ai_title or not ai_content:
+                continue
+            
             completed_status = ""
             if len(row) >= COMPLETED_COLUMN:
                 completed_status = row[COMPLETED_COLUMN - 1].strip() if row[COMPLETED_COLUMN - 1] else ""
             
-            # "완료" 표시가 있으면 이미 업로드된 항목이므로 건너뛰기
             if completed_status and "완료" in completed_status:
-                continue  # 이미 완료된 항목은 건너뛰기
+                continue
             
-            # 여기까지 왔으면 업로드할 항목 발견
-            print(f"\n[{get_kst_time()}] [감지] 행 {i}번 업로드 시작")
-            print(f"   D열(카테고리): {category if category else '(없음)'}")
-            print(f"   E열(AI_제목): {ai_title[:50]}...")
-            print(f"   F열(AI_본문): {ai_content[:50]}...")
+            link = row[2].strip() if len(row) > 2 and row[2] else ""
             
-            # 업로드 함수 실행 (카테고리 전달)
-            success = upload_to_newstown(ai_title, ai_content, category if category else None)
+            items_to_upload.append({
+                'row_num': i,
+                'ai_title': ai_title,
+                'ai_content': ai_content,
+                'category': category,
+                'link': link
+            })
+            
+            if len(items_to_upload) >= CONCURRENT_UPLOADS:
+                break
+        
+        if not items_to_upload:
+            return None
+        
+        print(f"\n[{get_kst_time()}] [감지] 업로드할 항목 {len(items_to_upload)}개 발견 (동시 업로드: {CONCURRENT_UPLOADS}개)")
+        for item in items_to_upload:
+            print(f"   - 행 {item['row_num']}번: {item['ai_title'][:40]}...")
+        
+        results = []
+        with ThreadPoolExecutor(max_workers=CONCURRENT_UPLOADS) as executor:
+            future_to_item = {executor.submit(upload_single_item, item): item for item in items_to_upload}
+            
+            for future in as_completed(future_to_item):
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    item = future_to_item[future]
+                    print(f"❌ 행 {item['row_num']}번 업로드 중 예외 발생: {e}")
+                    results.append({'row_num': item['row_num'], 'success': False, 'link': item['link']})
+        
+        success_count = 0
+        fail_count = 0
+        
+        for result in results:
+            row_num = result['row_num']
+            success = result['success']
+            link = result['link']
             
             if success:
-                # 성공 시: H열에 완료 시간 기록 (재시도 로직 적용)
                 try:
                     completed_time = f"완료 {get_kst_time()}"
-                    retry_with_backoff(sheet.update_cell, i, COMPLETED_COLUMN, completed_time)
-                    print(f"✅ 업로드 완료! 행 {i}번 항목이 성공적으로 업로드되었습니다.")
-                    print(f"   구글 시트 H열에 완료 상태가 기록되었습니다: {completed_time}")
+                    retry_with_backoff(sheet.update_cell, row_num, COMPLETED_COLUMN, completed_time)
+                    print(f"✅ 행 {row_num}번 업로드 완료!")
                     
-                    # DB 상태도 업데이트 (링크로 찾아서)
-                    try:
-                        link = row[2].strip() if len(row) > 2 and row[2] else ""
-                        if link:
-                            update_db_status_to_uploaded(link)
-                    except Exception as db_err:
-                        print(f"⚠️ DB 상태 업데이트 실패: {db_err}")
+                    if link:
+                        update_db_status_to_uploaded(link)
                     
-                    return True  # 하나 업로드했으면 종료
+                    success_count += 1
                 except Exception as sheet_error:
-                    print(f"✅ 업로드 완료! 행 {i}번 항목이 성공적으로 업로드되었습니다.")
-                    print(f"⚠️ 구글 시트 업데이트 실패: {sheet_error}")
-                    return True
+                    print(f"✅ 행 {row_num}번 업로드 완료! (시트 업데이트 실패: {sheet_error})")
+                    success_count += 1
             else:
-                # 실패 시: H열에 실패 기록 (재시도 로직 적용)
                 try:
-                    retry_with_backoff(sheet.update_cell, i, COMPLETED_COLUMN, f"실패 {get_kst_time()}")
-                    print(f"❌ 업로드 실패! 행 {i}번 항목 업로드에 실패했습니다.")
+                    retry_with_backoff(sheet.update_cell, row_num, COMPLETED_COLUMN, f"실패 {get_kst_time()}")
+                    print(f"❌ 행 {row_num}번 업로드 실패!")
                 except Exception as sheet_error:
-                    print(f"❌ 업로드 실패! 행 {i}번 항목 업로드에 실패했습니다.")
-                    print(f"⚠️ 구글 시트 업데이트 실패: {sheet_error}")
-                return False  # 실패했지만 다음 항목 확인 가능
+                    print(f"❌ 행 {row_num}번 업로드 실패! (시트 업데이트 실패: {sheet_error})")
+                fail_count += 1
         
-        # 모든 행을 확인했는데 업로드할 항목이 없음
-        return None  # 업로드할 항목 없음 (E열/F열 비어있음)
+        print(f"\n[{get_kst_time()}] [결과] 성공: {success_count}개, 실패: {fail_count}개")
+        
+        return success_count > 0
         
     except Exception as e:
         print(f"❌ 시트 확인 중 오류 발생: {e}")
@@ -407,6 +455,7 @@ def main():
     print("="*60, flush=True)
     print(f"\n📡 구글 시트 연결 중...", flush=True)
     print(f"⏰ 감시 간격: {CHECK_INTERVAL}초", flush=True)
+    print(f"🚀 동시 업로드: {CONCURRENT_UPLOADS}개", flush=True)
     print(f"🛑 종료하려면 Ctrl+C를 누르세요\n", flush=True)
     
     # 인증 파일 로드
