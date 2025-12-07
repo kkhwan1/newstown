@@ -1529,6 +1529,9 @@ def main():
     db_titles = get_db_titles()
     print(f"\n[DB] 기존 DB 뉴스 {len(db_titles)}개 로드 완료")
     
+    # 배치 내 수집된 제목들 (같은 배치 내 중복 체크용)
+    batch_collected_titles = []
+    
     print(f"\n[SEARCH] 카테고리별 뉴스 수집 중...")
     print(f"   목표: 연애 {CATEGORY_LIMITS.get('연애', 0)}개, 경제 {CATEGORY_LIMITS.get('경제', 0)}개, 스포츠 {CATEGORY_LIMITS.get('스포츠', 0)}개")
     print(f"   총 목표: {target_count}개\n")
@@ -1564,15 +1567,23 @@ def main():
                 if check_duplicate_in_cache(existing_news_data, link, title):
                     continue
                 
+                # DB 기존 뉴스와 중복 체크
                 is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles)
                 if is_db_dup:
                     print(f"      [DB중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
+                    continue
+                
+                # 같은 배치 내 수집된 뉴스와 중복 체크 (핵심!)
+                is_batch_dup, batch_sim, batch_matched = is_duplicate_in_db(title, batch_collected_titles)
+                if is_batch_dup:
+                    print(f"      [배치중복] {title[:30]}... (유사도 {batch_sim:.0%})")
                     continue
                 
                 item['_search_keyword'] = keyword
                 item['_category'] = category
                 category_collected[category].append(item)
                 all_news_links.add(link)
+                batch_collected_titles.append(title)  # 배치 목록에 추가
                 print(f"      [신규] {title[:40]}...")
         
         time.sleep(0.5)
@@ -1684,6 +1695,9 @@ def main():
             print(f"[WARN] 목표 개수({target_count}개)보다 적습니다. 현재: {len(valid_items)}개")
             print(f"   추가 검색을 통해 목표 개수 확보 중...")
             
+            # 현재까지 수집된 모든 제목 (배치 내 중복 체크용)
+            all_collected_titles = batch_collected_titles + [v['title'] for v in valid_items]
+            
             # 추가 검색을 통해 목표 개수만큼 확보
             additional_rounds = 0
             while len(valid_items) < target_count and additional_rounds < 3:
@@ -1711,8 +1725,18 @@ def main():
                             if any(v['link'] == link for v in valid_items):
                                 continue
                             
-                            # 중복 체크
+                            # 캐시 중복 체크
                             if check_duplicate_in_cache(existing_news_data, link, title):
+                                continue
+                            
+                            # DB 중복 체크
+                            is_db_dup, _, _ = is_duplicate_in_db(title, db_titles)
+                            if is_db_dup:
+                                continue
+                            
+                            # 배치 내 중복 체크
+                            is_batch_dup, _, _ = is_duplicate_in_db(title, all_collected_titles)
+                            if is_batch_dup:
                                 continue
                             
                             # 운세 체크
@@ -1731,6 +1755,7 @@ def main():
                                 'link': link,
                                 '_search_keyword': search_keyword
                             })
+                            all_collected_titles.append(title)  # 배치 목록에도 추가
                 
                 if len(valid_items) >= target_count:
                     break
