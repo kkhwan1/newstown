@@ -43,10 +43,6 @@ localPort = 41913
 externalPort = 3001
 exposeLocalhost = true
 
-[[ports]]
-localPort = 43953
-externalPort = 3002
-
 [deployment]
 deploymentTarget = "vm"
 run = ["streamlit", "run", "dashboard.py", "--server.port", "5000", "--server.address", "0.0.0.0"]
