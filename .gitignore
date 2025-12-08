@@ -59,3 +59,11 @@ ngrok*
 
 # Config with sensitive data (use .env instead)
 config/dashboard_config.json
+config/naver_api.json
+config/api_usage.json
+
+# Replit development assets
+attached_assets/
+
+# Local state
+.local/
