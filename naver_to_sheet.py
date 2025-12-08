@@ -851,6 +851,32 @@ CATEGORY_KEYWORDS = {
     }
 }
 
+def is_news_excluded(title, description, target_category):
+    """뉴스가 제외 대상인지 확인 (수집 시 필터링용)
+    
+    Args:
+        title: 뉴스 제목
+        description: 뉴스 설명
+        target_category: 목표 카테고리 (연애, 스포츠, 경제)
+    
+    Returns:
+        True if excluded, False otherwise
+    """
+    if target_category not in CATEGORY_KEYWORDS:
+        return False
+    
+    exclude_keywords = CATEGORY_KEYWORDS[target_category].get("exclude", [])
+    if not exclude_keywords:
+        return False
+    
+    full_text = f"{title} {description}".lower()
+    
+    for keyword in exclude_keywords:
+        if keyword.lower() in full_text:
+            return True
+    
+    return False
+
 def fallback_classify(title, text):
     """키워드 매칭 없을 때 패턴 기반 분류 (개선된 버전)"""
     full_text = f"{title} {text}".lower()
@@ -1655,6 +1681,12 @@ def main():
                 is_batch_dup, batch_sim, batch_matched = is_duplicate_in_db(title, batch_collected_titles)
                 if is_batch_dup:
                     print(f"      [배치중복] {title[:30]}... (유사도 {batch_sim:.0%})")
+                    continue
+                
+                # 카테고리별 제외 키워드 체크 (강화된 필터링)
+                description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                if is_news_excluded(title, description, category):
+                    print(f"      [제외] {title[:30]}... (카테고리 제외 키워드 매칭)")
                     continue
                 
                 item['_search_keyword'] = keyword
