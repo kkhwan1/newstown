@@ -7,7 +7,7 @@ JSON 기반 설정 영속화 및 기본값 관리
 import copy
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from pathlib import Path
 
 # python-dotenv 로드
@@ -15,6 +15,7 @@ try:
     from dotenv import load_dotenv
     DOTENV_AVAILABLE = True
 except ImportError:
+    load_dotenv = None
     DOTENV_AVAILABLE = False
 
 
@@ -83,7 +84,7 @@ class ConfigManager:
         }
     }
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[Union[str, Path]] = None):
         """설정 관리자 초기화
 
         Args:
@@ -93,9 +94,9 @@ class ConfigManager:
         base_dir = Path(__file__).parent.parent
 
         if config_path is None:
-            config_path = base_dir / "config" / "dashboard_config.json"
-
-        self.config_path = Path(config_path)
+            self.config_path = base_dir / "config" / "dashboard_config.json"
+        else:
+            self.config_path = Path(config_path)
         self._config: Dict[str, Any] = {}
 
         # .env 파일 로드
@@ -109,7 +110,7 @@ class ConfigManager:
 
     def _load_env(self, base_dir: Path):
         """.env 파일 로드"""
-        if not DOTENV_AVAILABLE:
+        if not DOTENV_AVAILABLE or load_dotenv is None:
             return
 
         env_path = base_dir / ".env"
@@ -122,49 +123,60 @@ class ConfigManager:
     def _apply_env_overrides(self):
         """환경 변수로 설정 오버라이드"""
         # Google Sheet URL
-        if os.getenv("GOOGLE_SHEET_URL"):
+        sheet_url = os.getenv("GOOGLE_SHEET_URL")
+        if sheet_url:
             self._config.setdefault("google_sheet", {})
-            self._config["google_sheet"]["url"] = os.getenv("GOOGLE_SHEET_URL")
+            self._config["google_sheet"]["url"] = sheet_url
 
         # 뉴스타운 로그인 정보
-        if os.getenv("NEWSTOWN_ID"):
+        newstown_id = os.getenv("NEWSTOWN_ID")
+        if newstown_id:
             self._config.setdefault("newstown", {})
-            self._config["newstown"]["site_id"] = os.getenv("NEWSTOWN_ID")
-        if os.getenv("NEWSTOWN_PW"):
+            self._config["newstown"]["site_id"] = newstown_id
+        newstown_pw = os.getenv("NEWSTOWN_PW")
+        if newstown_pw:
             self._config.setdefault("newstown", {})
-            self._config["newstown"]["site_pw"] = os.getenv("NEWSTOWN_PW")
+            self._config["newstown"]["site_pw"] = newstown_pw
 
         # 네이버 API
-        if os.getenv("NAVER_CLIENT_ID"):
+        naver_id = os.getenv("NAVER_CLIENT_ID")
+        if naver_id:
             self._config.setdefault("naver_api", {})
-            self._config["naver_api"]["client_id"] = os.getenv("NAVER_CLIENT_ID")
-        if os.getenv("NAVER_CLIENT_SECRET"):
+            self._config["naver_api"]["client_id"] = naver_id
+        naver_secret = os.getenv("NAVER_CLIENT_SECRET")
+        if naver_secret:
             self._config.setdefault("naver_api", {})
-            self._config["naver_api"]["client_secret"] = os.getenv("NAVER_CLIENT_SECRET")
+            self._config["naver_api"]["client_secret"] = naver_secret
 
         # 뉴스 수집 설정
-        if os.getenv("NEWS_DISPLAY_COUNT"):
+        display_count = os.getenv("NEWS_DISPLAY_COUNT")
+        if display_count:
             self._config.setdefault("news_collection", {})
-            self._config["news_collection"]["display_count"] = int(os.getenv("NEWS_DISPLAY_COUNT"))
-        if os.getenv("NEWS_MAX_WORKERS"):
+            self._config["news_collection"]["display_count"] = int(display_count)
+        max_workers = os.getenv("NEWS_MAX_WORKERS")
+        if max_workers:
             self._config.setdefault("news_collection", {})
-            self._config["news_collection"]["max_workers"] = int(os.getenv("NEWS_MAX_WORKERS"))
+            self._config["news_collection"]["max_workers"] = int(max_workers)
 
         # 업로드 감시 설정
-        if os.getenv("UPLOAD_CHECK_INTERVAL"):
+        check_interval = os.getenv("UPLOAD_CHECK_INTERVAL")
+        if check_interval:
             self._config.setdefault("upload_monitor", {})
-            self._config["upload_monitor"]["check_interval"] = int(os.getenv("UPLOAD_CHECK_INTERVAL"))
-        if os.getenv("UPLOAD_COMPLETED_COLUMN"):
+            self._config["upload_monitor"]["check_interval"] = int(check_interval)
+        completed_col = os.getenv("UPLOAD_COMPLETED_COLUMN")
+        if completed_col:
             self._config.setdefault("upload_monitor", {})
-            self._config["upload_monitor"]["completed_column"] = int(os.getenv("UPLOAD_COMPLETED_COLUMN"))
+            self._config["upload_monitor"]["completed_column"] = int(completed_col)
 
         # 완료행 삭제 설정
-        if os.getenv("DELETE_INTERVAL"):
+        delete_interval = os.getenv("DELETE_INTERVAL")
+        if delete_interval:
             self._config.setdefault("row_deletion", {})
-            self._config["row_deletion"]["delete_interval"] = int(os.getenv("DELETE_INTERVAL"))
-        if os.getenv("DELETE_MAX_COUNT"):
+            self._config["row_deletion"]["delete_interval"] = int(delete_interval)
+        delete_max = os.getenv("DELETE_MAX_COUNT")
+        if delete_max:
             self._config.setdefault("row_deletion", {})
-            self._config["row_deletion"]["max_delete_count"] = int(os.getenv("DELETE_MAX_COUNT"))
+            self._config["row_deletion"]["max_delete_count"] = int(delete_max)
 
     def _load(self):
         """설정 파일 로드"""
