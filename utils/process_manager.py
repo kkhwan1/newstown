@@ -102,19 +102,24 @@ class ProcessManager:
             if config:
                 env['PROCESS_CONFIG'] = json.dumps(config, ensure_ascii=False)
 
-            log_file = open(self._get_log_file(name), 'w', encoding='utf-8')
+            log_file_path = self._get_log_file(name)
+            log_file = open(log_file_path, 'w', encoding='utf-8')
 
             script_abs_path = os.path.abspath(script_path)
             project_dir = os.path.dirname(os.path.dirname(script_abs_path))
             
-            process = subprocess.Popen(
-                [sys.executable, script_abs_path],
-                env=env,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                cwd=project_dir,
-                start_new_session=True
-            )
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, script_abs_path],
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    cwd=project_dir,
+                    start_new_session=True
+                )
+            except Exception:
+                log_file.close()
+                raise
 
             self._processes[name] = process
             start_time = datetime.now().isoformat()
