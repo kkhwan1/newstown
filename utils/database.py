@@ -65,7 +65,7 @@ def init_database():
     cur.close()
     conn.close()
 
-def save_news(title: str, content: str, link: str, category: str, source: str = "네이버뉴스", search_keyword: str = None) -> Optional[int]:
+def save_news(title: str, content: str, link: str, category: str, source: str = "네이버뉴스", search_keyword: Optional[str] = None) -> Optional[int]:
     """뉴스 저장
     
     Args:
@@ -98,7 +98,7 @@ def save_news(title: str, content: str, link: str, category: str, source: str = 
         cur.close()
         conn.close()
 
-def get_news_list(category: str = None, status: str = None, limit: int = 50, offset: int = 0) -> List[Dict]:
+def get_news_list(category: Optional[str] = None, status: Optional[str] = None, limit: int = 50, offset: int = 0) -> List[Dict]:
     """뉴스 목록 조회"""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -179,7 +179,7 @@ def save_prompt(name: str, category: str, prompt_text: str) -> int:
     
     return result
 
-def get_prompts(category: str = None, active_only: bool = True) -> List[Dict]:
+def get_prompts(category: Optional[str] = None, active_only: bool = True) -> List[Dict]:
     """프롬프트 목록 조회"""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -203,7 +203,7 @@ def get_prompts(category: str = None, active_only: bool = True) -> List[Dict]:
     
     return [dict(row) for row in results]
 
-def update_prompt(prompt_id: int, name: str = None, prompt_text: str = None, is_active: bool = None):
+def update_prompt(prompt_id: int, name: Optional[str] = None, category: Optional[str] = None, prompt_text: Optional[str] = None, is_active: Optional[bool] = None):
     """프롬프트 업데이트"""
     conn = get_connection()
     cur = conn.cursor()
@@ -214,6 +214,9 @@ def update_prompt(prompt_id: int, name: str = None, prompt_text: str = None, is_
     if name is not None:
         updates.append("name = %s")
         params.append(name)
+    if category is not None:
+        updates.append("category = %s")
+        params.append(category)
     if prompt_text is not None:
         updates.append("prompt_text = %s")
         params.append(prompt_text)

@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
+from typing import Optional, List, Dict
 
 LOG_FILE = Path(__file__).parent.parent / "logs" / "activity.log"
 MAX_LINES = 500
@@ -40,7 +41,7 @@ def add_log(message: str, level: str = "INFO", category: str = "SYSTEM"):
         except Exception as e:
             print(f"Log error: {e}")
 
-def get_logs(limit: int = 100, category: str = None):
+def get_logs(limit: int = 100, category: Optional[str] = None) -> List[Dict]:
     ensure_log_dir()
     logs = []
     
