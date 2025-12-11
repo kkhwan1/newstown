@@ -602,6 +602,10 @@ def render_main_page():
     st.markdown("---")
 
     with st.expander("키워드 설정", expanded=False):
+        if 'keyword_saved' in st.session_state:
+            st.success(st.session_state['keyword_saved'])
+            del st.session_state['keyword_saved']
+        
         for cat in categories:
             cat_data = category_keywords.get(cat, {"core": [], "general": []})
             core_kws = cat_data.get("core", [])
@@ -618,6 +622,7 @@ def render_main_page():
                             cat_data["core"] = core_kws
                             category_keywords[cat] = cat_data
                             cm.set_section("category_keywords", category_keywords)
+                            st.session_state['keyword_saved'] = f"'{kw}' 키워드가 삭제되었습니다."
                             st.rerun()
             
             c1, c2 = st.columns([5, 1])
@@ -630,6 +635,7 @@ def render_main_page():
                         cat_data["core"] = core_kws
                         category_keywords[cat] = cat_data
                         cm.set_section("category_keywords", category_keywords)
+                        st.session_state['keyword_saved'] = f"'{new_kw}' 키워드가 추가되었습니다."
                         st.rerun()
             
             st.markdown("---")
