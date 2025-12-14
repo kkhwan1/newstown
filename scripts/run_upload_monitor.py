@@ -155,7 +155,9 @@ def run_monitor(config):
                 break
 
 def main():
-    """메인 실행 함수"""
+    """메인 실행 함수 - 자동 재시작 포함"""
+    global _shutdown_requested
+    
     log("뉴스타운 업로드 감시 시작", "SUCCESS")
 
     setup_signal_handlers()
@@ -165,16 +167,36 @@ def main():
         log("종료 요청으로 실행 취소", "WARN")
         return
 
-    try:
-        run_monitor(config)
-    except KeyboardInterrupt:
-        log("사용자에 의해 중단됨", "WARN")
-    except Exception as e:
-        log(f"오류 발생: {e}", "ERROR")
-        import traceback
-        traceback.print_exc()
-    finally:
-        log("업로드 감시 프로세스 종료")
+    max_retries = 10
+    retry_count = 0
+    retry_delay = 60
+    
+    while not _shutdown_requested and retry_count < max_retries:
+        try:
+            run_monitor(config)
+            if _shutdown_requested:
+                break
+            retry_count = 0
+        except KeyboardInterrupt:
+            log("사용자에 의해 중단됨", "WARN")
+            break
+        except Exception as e:
+            retry_count += 1
+            log(f"오류 발생 ({retry_count}/{max_retries}): {e}", "ERROR")
+            import traceback
+            traceback.print_exc()
+            
+            if retry_count < max_retries and not _shutdown_requested:
+                log(f"{retry_delay}초 후 재시작 시도...", "WARN")
+                if interruptible_sleep(retry_delay):
+                    log("대기 중 종료 신호 수신", "WARN")
+                    break
+                log(f"업로드 감시 재시작 ({retry_count}/{max_retries})", "SUCCESS")
+            else:
+                log("최대 재시도 횟수 초과 또는 종료 요청, 프로세스 종료", "ERROR")
+                break
+    
+    log("업로드 감시 프로세스 종료")
 
 if __name__ == "__main__":
     main()
