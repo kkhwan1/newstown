@@ -29,6 +29,10 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
+# 프로젝트 루트 디렉토리 (스크립트 위치 기준)
+PROJECT_ROOT = Path(__file__).parent
+CREDENTIALS_PATH = PROJECT_ROOT / 'credentials.json'
+
 # ==========================================
 # [CONFIG] 설정 구역
 # ==========================================
@@ -1753,7 +1757,7 @@ def main():
     
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name(str(CREDENTIALS_PATH), scope)
         client = gspread.authorize(creds)
         
         doc = client.open_by_url(SHEET_URL)
@@ -1762,7 +1766,7 @@ def main():
         
     except Exception as e:
         print(f"[ERROR] 구글 시트 연결 실패: {e}")
-        print("   credentials.json 파일이 같은 폴더에 있는지 확인하세요.")
+        print(f"   credentials.json 경로: {CREDENTIALS_PATH}")
         return
     
     # ==========================================
