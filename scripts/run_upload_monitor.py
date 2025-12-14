@@ -125,7 +125,7 @@ def run_monitor(config):
             elif result:
                 log(f"[{check_count}] 뉴스타운 업로드 완료!", "SUCCESS")
             else:
-                log(f"[{check_count}] 업로드 실패", "ERROR")
+                log(f"[{check_count}] 업로드 실패 - 다음 체크에서 재시도", "WARN")
 
             if interruptible_sleep(check_interval):
                 log("대기 중 종료 신호 수신", "WARN")
@@ -150,7 +150,15 @@ def run_monitor(config):
                 if interruptible_sleep(check_interval):
                     break
         except Exception as e:
-            log(f"오류 발생: {e}", "ERROR")
+            error_msg = str(e)
+            if "selenium" in error_msg.lower() or "webdriver" in error_msg.lower():
+                log(f"Selenium 오류: {e} - 브라우저 재시작 필요할 수 있음", "ERROR")
+            elif "timeout" in error_msg.lower():
+                log(f"타임아웃 오류: {e} - 네트워크 상태 확인 필요", "ERROR")
+            elif "connection" in error_msg.lower():
+                log(f"연결 오류: {e} - 네트워크 연결 확인", "ERROR")
+            else:
+                log(f"오류 발생: {e}", "ERROR")
             if interruptible_sleep(check_interval):
                 break
 
