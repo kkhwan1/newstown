@@ -387,6 +387,9 @@ def save_news_to_db_and_sheet(news_list, category, search_keyword=None):
 def render_main_page():
     pm = st.session_state.process_manager
     cm = st.session_state.config_manager
+    
+    # 다른 세션에서 변경된 설정 반영을 위해 파일에서 다시 로드
+    cm.reload()
 
     st.markdown("# 대시보드")
     
@@ -1265,6 +1268,8 @@ def render_settings_page():
     st.markdown("# 설정")
     
     cm = st.session_state.config_manager
+    # 다른 세션에서 변경된 설정 반영
+    cm.reload()
     
     c1, c2 = st.columns(2)
     
