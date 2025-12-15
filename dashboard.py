@@ -621,8 +621,10 @@ def render_main_page():
                             core_kws.remove(kw)
                             cat_data["core"] = core_kws
                             category_keywords[cat] = cat_data
-                            cm.set_section("category_keywords", category_keywords)
-                            st.session_state['keyword_saved'] = f"'{kw}' 키워드가 삭제되었습니다."
+                            if cm.set_section("category_keywords", category_keywords):
+                                st.session_state['keyword_saved'] = f"'{kw}' 키워드가 삭제되었습니다."
+                            else:
+                                st.session_state['keyword_saved'] = f"'{kw}' 키워드 삭제 실패!"
                             st.rerun()
             
             c1, c2 = st.columns([5, 1])
@@ -634,8 +636,10 @@ def render_main_page():
                         core_kws.append(new_kw)
                         cat_data["core"] = core_kws
                         category_keywords[cat] = cat_data
-                        cm.set_section("category_keywords", category_keywords)
-                        st.session_state['keyword_saved'] = f"'{new_kw}' 키워드가 추가되었습니다."
+                        if cm.set_section("category_keywords", category_keywords):
+                            st.session_state['keyword_saved'] = f"'{new_kw}' 키워드가 추가되었습니다."
+                        else:
+                            st.session_state['keyword_saved'] = f"'{new_kw}' 키워드 추가 실패!"
                         st.rerun()
             
             st.markdown("---")

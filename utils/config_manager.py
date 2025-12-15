@@ -193,27 +193,36 @@ class ConfigManager:
             self._config = self.DEFAULT_CONFIG.copy()
             self._save()
 
-    def _save(self):
-        """설정 파일 저장 (변경사항이 있을 때만)"""
+    def _save(self, force: bool = False) -> bool:
+        """설정 파일 저장
+        
+        Args:
+            force: True면 비교 없이 강제 저장
+            
+        Returns:
+            저장 성공 여부
+        """
         try:
             # 디렉토리가 없으면 생성
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # 기존 파일 내용과 비교하여 변경사항이 있을 때만 저장
-            if self.config_path.exists():
+            # force=False면 기존 파일과 비교
+            if not force and self.config_path.exists():
                 try:
                     with open(self.config_path, 'r', encoding='utf-8') as f:
                         existing_data = json.load(f)
                     if existing_data == self._config:
-                        return  # 변경사항 없음, 저장하지 않음
+                        return True  # 변경사항 없음
                 except Exception:
                     pass  # 파일 읽기 실패시 저장 진행
 
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 json.dump(self._config, f, ensure_ascii=False, indent=2)
             print(f"✅ 설정 파일 저장됨: {self.config_path}")
+            return True
         except Exception as e:
             print(f"❌ 설정 파일 저장 실패: {e}")
+            return False
 
     def get(self, section: str, key: Optional[str] = None, default: Any = None) -> Any:
         """설정 값 조회 (복사본 반환으로 내부 상태 보호)
@@ -263,18 +272,23 @@ class ConfigManager:
         if save:
             self._save()
 
-    def set_section(self, section: str, data: Dict[str, Any], save: bool = True):
+    def set_section(self, section: str, data: Dict[str, Any], save: bool = True, force: bool = True) -> bool:
         """섹션 전체 저장
 
         Args:
             section: 섹션 이름
             data: 저장할 데이터 딕셔너리
             save: 파일에 즉시 저장할지 여부
+            force: 강제 저장 (기본값 True)
+            
+        Returns:
+            저장 성공 여부
         """
-        self._config[section] = data
+        self._config[section] = copy.deepcopy(data)  # 복사본 저장
 
         if save:
-            self._save()
+            return self._save(force=force)
+        return True
 
     def get_all(self) -> Dict[str, Any]:
         """전체 설정 반환 (복사본 반환)"""
