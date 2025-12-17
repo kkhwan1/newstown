@@ -32,6 +32,7 @@ if sys.platform == 'win32':
 # 프로젝트 루트 디렉토리 (스크립트 위치 기준)
 PROJECT_ROOT = Path(__file__).parent
 CREDENTIALS_PATH = PROJECT_ROOT / 'credentials.json'
+DASHBOARD_CONFIG_PATH = PROJECT_ROOT / 'config' / 'dashboard_config.json'
 
 # ==========================================
 # [CONFIG] 설정 구역
@@ -43,64 +44,55 @@ NAVER_CLIENT_SECRET = "sDRT5fUUaK"
 # 2. 구글 시트 설정
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit"
 
-# 3. 검색어 설정 (연애 30개, 스포츠 40개, 경제 30개 - 총 100개)
-# 일반적인 키워드로 최신순 뉴스 수집
-KEYWORDS = {
-    # 연애 관련 (일반 키워드로 최신 뉴스 수집)
-    "연애": 8,
-    "연예": 8,
-    "커플": 5,
-    "결혼": 5,
-    "데이트": 4,
+# 3. 대시보드 설정에서 키워드 로드 함수
+def load_keywords_from_dashboard():
+    """대시보드 설정 파일에서 category_keywords의 core 키워드를 로드하여 
+    KEYWORDS와 KEYWORD_CATEGORY_MAP을 동적으로 생성"""
+    keywords = {}
+    keyword_category_map = {}
+    
+    try:
+        if DASHBOARD_CONFIG_PATH.exists():
+            with open(DASHBOARD_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            category_keywords = config.get('category_keywords', {})
+            
+            for category, kw_data in category_keywords.items():
+                core_keywords = kw_data.get('core', [])
+                for kw in core_keywords:
+                    keywords[kw] = 10
+                    keyword_category_map[kw] = category
+            
+            print(f"[CONFIG] 대시보드에서 키워드 로드 완료: {len(keywords)}개")
+            for cat in category_keywords:
+                cat_count = len(category_keywords[cat].get('core', []))
+                print(f"   - {cat}: {cat_count}개 키워드")
+        else:
+            print(f"[WARN] 대시보드 설정 파일 없음: {DASHBOARD_CONFIG_PATH}")
+            keywords, keyword_category_map = get_default_keywords()
+    except Exception as e:
+        print(f"[ERROR] 키워드 로드 실패: {e}")
+        keywords, keyword_category_map = get_default_keywords()
+    
+    return keywords, keyword_category_map
 
-    # 스포츠 관련 (일반 키워드로 최신 뉴스 수집)
-    "스포츠": 20,
-    "야구": 10,
-    "축구": 10,
-    "농구": 5,
-    "손흥민": 5,
-    "이강인": 5,
-    "K리그": 5,
-    "프로야구": 5,
+def get_default_keywords():
+    """기본 키워드 (설정 파일 없을 때 fallback)"""
+    keywords = {
+        "연애": 8, "연예": 8, "커플": 5, "결혼": 5,
+        "스포츠": 20, "야구": 10, "축구": 10,
+        "주식": 8, "경제": 5, "코스피": 4,
+    }
+    keyword_category_map = {
+        "연애": "연애", "연예": "연애", "커플": "연애", "결혼": "연애",
+        "스포츠": "스포츠", "야구": "스포츠", "축구": "스포츠",
+        "주식": "경제", "경제": "경제", "코스피": "경제",
+    }
+    return keywords, keyword_category_map
 
-    # 경제 관련 (ENABLE_ECONOMY_CATEGORY=True 시 사용)
-    "주식": 8,
-    "부동산": 6,
-    "금리": 5,
-    "환율": 4,
-    "경제": 5,
-    "금융": 4,
-    "투자": 4,
-    "코스피": 4,
-}
-
-# 검색어별 목표 카테고리 매핑
-KEYWORD_CATEGORY_MAP = {
-    # 연애 매핑
-    "연애": "연애",
-    "연예": "연애",
-    "커플": "연애",
-    "결혼": "연애",
-    "데이트": "연애",
-    # 스포츠 매핑
-    "스포츠": "스포츠",
-    "야구": "스포츠",
-    "축구": "스포츠",
-    "농구": "스포츠",
-    "손흥민": "스포츠",
-    "이강인": "스포츠",
-    "K리그": "스포츠",
-    "프로야구": "스포츠",
-    # 경제 매핑
-    "주식": "경제",
-    "부동산": "경제",
-    "금리": "경제",
-    "환율": "경제",
-    "경제": "경제",
-    "금융": "경제",
-    "투자": "경제",
-    "코스피": "경제",
-}
+# 대시보드에서 키워드 로드 (실행 시 동적 로드)
+KEYWORDS, KEYWORD_CATEGORY_MAP = load_keywords_from_dashboard()
 
 # 4. 업로드 순서: 랜덤으로 섞어서 업로드
 # (패턴 없이 완전 랜덤)
