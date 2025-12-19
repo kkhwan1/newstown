@@ -1785,8 +1785,13 @@ def main():
     print(f"   목표: 연애 {CATEGORY_LIMITS.get('연애', 0)}개, 경제 {CATEGORY_LIMITS.get('경제', 0)}개, 스포츠 {CATEGORY_LIMITS.get('스포츠', 0)}개")
     print(f"   총 목표: {target_count}개\n")
     
+    # 키워드 목록을 랜덤으로 섞기 (매번 다른 순서로 검색)
+    keyword_list = list(KEYWORDS.items())
+    random.shuffle(keyword_list)
+    print(f"   [RANDOM] 키워드 순서 랜덤 셔플 완료 ({len(keyword_list)}개)")
+    
     # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
-    for keyword, search_count in KEYWORDS.items():
+    for keyword, search_count in keyword_list:
         category = KEYWORD_CATEGORY_MAP.get(keyword, None)
         if not category or category not in CATEGORY_LIMITS:
             continue
