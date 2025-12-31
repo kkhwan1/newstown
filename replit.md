@@ -54,6 +54,11 @@ streamlit run dashboard.py
 ### prompts
 - id, name, category, prompt_text, is_active
 
+### settings (신규 - 2024-12-31)
+- id, key (unique), value (JSON), updated_at
+- **배포 환경에서도 설정이 유지되도록 DB에 저장**
+- key 목록: news_collection, category_keywords, upload_monitor, row_deletion, google_sheet, newstown, naver_api, news_schedule
+
 ## 필수 설정
 - `DATABASE_URL`: PostgreSQL 연결 (자동)
 - `config/naver_api.json`: 네이버 API 키
@@ -74,6 +79,9 @@ streamlit run dashboard.py
 - 키워드 개별 삭제 기능
 
 ## 최근 변경사항
+- 2024-12-31: **설정 DB 저장** - 키워드, 수집 간격 등 모든 설정을 PostgreSQL에 저장하여 배포 후에도 설정 유지
+- 2024-12-31: **백그라운드 스케줄러 DB 기반** - 대시보드 없이도 설정된 간격으로 자동 수집
+- 2024-12-31: **키워드 무작위 수집** - 매 실행 시 키워드 순서를 랜덤 셔플하여 균등 수집
 - 2024-12-07: 동시 업로드 기능 추가 - 뉴스타운에 2~3개 뉴스를 동시에 업로드 가능 (설정 페이지에서 개수 조절)
 - 2024-12-07: 네이버 API 사용량 표시 추가 - 설정 페이지에서 오늘 호출 수, 수집 뉴스 수, 남은 한도 확인
 - 2024-12-07: 배치 내 중복 체크 추가 - 같은 수집 세션에서 유사한 기사 자동 제외
