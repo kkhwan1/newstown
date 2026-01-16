@@ -4,11 +4,16 @@ address = "0.0.0.0"
 headless = true
 enableCORS = false
 enableXsrfProtection = false
+enableWebsocketCompression = true
+runOnSave = false
+maxUploadSize = 200
 
 [browser]
-serverAddress = "0.0.0.0"
 gatherUsageStats = false
-serverPort = 5000
 
 [client]
 toolbarMode = "minimal"
+showErrorDetails = false
+
+[runner]
+fastReruns = true
