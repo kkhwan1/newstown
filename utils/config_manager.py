@@ -73,6 +73,24 @@ class ConfigManager:
             "enabled": False,
             "interval_hours": 3,
             "last_run": None
+        },
+        "golftimes": {
+            "site_id": "thegolftimes",
+            "site_pw": "Golf1220"
+        },
+        "upload_platforms": {
+            "newstown": {
+                "enabled": True,
+                "title_column": 5,
+                "content_column": 6,
+                "completed_column": 8
+            },
+            "golftimes": {
+                "enabled": False,
+                "title_column": 10,
+                "content_column": 11,
+                "completed_column": 12
+            }
         }
     }
 
@@ -323,6 +341,41 @@ class ConfigManager:
         config['sheet_url'] = self.get("google_sheet", "url")
         config['completed_column'] = self.get("upload_monitor", "completed_column")
         return config
+
+    def get_golftimes_config(self) -> Dict[str, Any]:
+        """골프타임즈 설정 반환"""
+        config = self.get("golftimes")
+        return config
+
+    def get_platform_config(self, platform: str) -> Dict[str, Any]:
+        """플랫폼별 설정 반환"""
+        platforms = self.get("upload_platforms")
+        return platforms.get(platform, {})
+
+    def is_platform_enabled(self, platform: str) -> bool:
+        """플랫폼 활성화 여부 반환"""
+        platforms = self.get("upload_platforms")
+        return platforms.get(platform, {}).get("enabled", False)
+
+    def set_platform_enabled(self, platform: str, enabled: bool, save: bool = True):
+        """플랫폼 활성화 여부 설정"""
+        platforms = self.get("upload_platforms")
+        if platform not in platforms:
+            platforms[platform] = {}
+        platforms[platform]["enabled"] = enabled
+        if save:
+            self.set_section("upload_platforms", platforms, save=True)
+
+    def get_all_upload_config(self) -> Dict[str, Any]:
+        """업로드 관련 전체 설정 반환 (뉴스타운 + 골프타임즈)"""
+        base_config = self.get("upload_monitor")
+        base_config['sheet_url'] = self.get("google_sheet", "url")
+        base_config['site_id'] = self.get("newstown", "site_id")
+        base_config['site_pw'] = self.get("newstown", "site_pw")
+        base_config['golftimes_id'] = self.get("golftimes", "site_id")
+        base_config['golftimes_pw'] = self.get("golftimes", "site_pw")
+        base_config['platforms'] = self.get("upload_platforms")
+        return base_config
 
 
 _global_config: Optional[ConfigManager] = None
