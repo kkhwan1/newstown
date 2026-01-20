@@ -81,15 +81,19 @@ class ConfigManager:
         "upload_platforms": {
             "newstown": {
                 "enabled": True,
+                "display_name": "뉴스타운",
                 "title_column": 5,
                 "content_column": 6,
-                "completed_column": 8
+                "completed_column": 8,
+                "credentials_section": "newstown"
             },
             "golftimes": {
                 "enabled": False,
+                "display_name": "골프타임즈",
                 "title_column": 10,
                 "content_column": 11,
-                "completed_column": 12
+                "completed_column": 12,
+                "credentials_section": "golftimes"
             }
         }
     }
@@ -366,16 +370,75 @@ class ConfigManager:
         if save:
             self.set_section("upload_platforms", platforms, save=True)
 
-    def get_all_upload_config(self) -> Dict[str, Any]:
-        """업로드 관련 전체 설정 반환 (뉴스타운 + 골프타임즈)"""
+    def get_all_upload_config(self, selected_platforms: Optional[list] = None) -> Dict[str, Any]:
+        """업로드 관련 전체 설정 반환 (선택된 플랫폼만 포함)"""
         base_config = self.get("upload_monitor")
         base_config['sheet_url'] = self.get("google_sheet", "url")
         base_config['site_id'] = self.get("newstown", "site_id")
         base_config['site_pw'] = self.get("newstown", "site_pw")
         base_config['golftimes_id'] = self.get("golftimes", "site_id")
         base_config['golftimes_pw'] = self.get("golftimes", "site_pw")
-        base_config['platforms'] = self.get("upload_platforms")
+        
+        all_platforms = self.get("upload_platforms")
+        if selected_platforms:
+            base_config['platforms'] = {k: v for k, v in all_platforms.items() if k in selected_platforms}
+            for p in selected_platforms:
+                if p in base_config['platforms']:
+                    base_config['platforms'][p]['enabled'] = True
+        else:
+            base_config['platforms'] = all_platforms
         return base_config
+
+    def get_all_platforms(self) -> Dict[str, Dict[str, Any]]:
+        """모든 플랫폼 목록 반환"""
+        return self.get("upload_platforms") or {}
+
+    def get_enabled_platforms(self) -> list:
+        """활성화된 플랫폼 목록 반환"""
+        platforms = self.get("upload_platforms") or {}
+        return [k for k, v in platforms.items() if v.get("enabled", False)]
+
+    def add_platform(self, platform_id: str, display_name: str, 
+                     title_column: int, content_column: int, completed_column: int,
+                     credentials_section: str = None, save: bool = True) -> bool:
+        """새 플랫폼 추가"""
+        platforms = self.get("upload_platforms") or {}
+        platforms[platform_id] = {
+            "enabled": False,
+            "display_name": display_name,
+            "title_column": title_column,
+            "content_column": content_column,
+            "completed_column": completed_column,
+            "credentials_section": credentials_section or platform_id
+        }
+        if save:
+            return self.set_section("upload_platforms", platforms, save=True)
+        return True
+
+    def remove_platform(self, platform_id: str, save: bool = True) -> bool:
+        """플랫폼 삭제"""
+        platforms = self.get("upload_platforms") or {}
+        if platform_id in platforms:
+            del platforms[platform_id]
+            if save:
+                return self.set_section("upload_platforms", platforms, save=True)
+        return True
+
+    def update_platform(self, platform_id: str, updates: Dict[str, Any], save: bool = True) -> bool:
+        """플랫폼 설정 업데이트"""
+        platforms = self.get("upload_platforms") or {}
+        if platform_id in platforms:
+            platforms[platform_id].update(updates)
+            if save:
+                return self.set_section("upload_platforms", platforms, save=True)
+        return False
+
+    def get_platform_display_name(self, platform_id: str) -> str:
+        """플랫폼 표시 이름 반환"""
+        platforms = self.get("upload_platforms") or {}
+        platform = platforms.get(platform_id, {})
+        names = {"newstown": "뉴스타운", "golftimes": "골프타임즈"}
+        return platform.get("display_name", names.get(platform_id, platform_id))
 
 
 _global_config: Optional[ConfigManager] = None

@@ -405,22 +405,41 @@ def render_main_page():
     categories = ["연애", "경제", "스포츠"]
 
     st.markdown("### 뉴스 자동 업로드")
-    platforms = cm.get("upload_platforms") or {}
-    newstown_on = platforms.get("newstown", {}).get("enabled", True)
-    golftimes_on = platforms.get("golftimes", {}).get("enabled", False)
-    platform_list = []
-    if newstown_on:
-        platform_list.append("뉴스타운")
-    if golftimes_on:
-        platform_list.append("골프타임즈")
-    platform_str = ", ".join(platform_list) if platform_list else "(비활성화됨)"
-    st.caption(f"활성화된 플랫폼: {platform_str}")
+    
+    all_platforms = cm.get_all_platforms()
+    platform_names = {"newstown": "뉴스타운", "golftimes": "골프타임즈"}
+    
+    upload_status = pm.get_status(PROC_UPLOAD)
+    is_upload_run = upload_status['running']
+    
+    if not is_upload_run:
+        st.caption("업로드할 플랫폼을 선택하세요:")
+        platform_cols = st.columns(len(all_platforms) if all_platforms else 1)
+        
+        if 'selected_platforms' not in st.session_state:
+            st.session_state.selected_platforms = [p for p, v in all_platforms.items() if v.get("enabled", False)]
+        
+        selected_platforms = []
+        for i, (platform_id, platform_config) in enumerate(all_platforms.items()):
+            with platform_cols[i]:
+                display_name = platform_config.get("display_name", platform_names.get(platform_id, platform_id))
+                is_selected = st.checkbox(
+                    display_name, 
+                    value=platform_id in st.session_state.selected_platforms,
+                    key=f"platform_select_{platform_id}"
+                )
+                if is_selected:
+                    selected_platforms.append(platform_id)
+        
+        st.session_state.selected_platforms = selected_platforms
+    else:
+        enabled_platforms = cm.get_enabled_platforms()
+        platform_str = ", ".join([platform_names.get(p, p) for p in enabled_platforms]) if enabled_platforms else "(비활성화됨)"
+        st.caption(f"업로드 중인 플랫폼: {platform_str}")
     
     col_up1, col_up2 = st.columns(2)
     
     with col_up1:
-        upload_status = pm.get_status(PROC_UPLOAD)
-        is_upload_run = upload_status['running']
         st.markdown(f'<div class="status-box"><b>업로드 감시</b><br><span class="{"status-run" if is_upload_run else "status-stop"}">{"● 실행중" if is_upload_run else "○ 중지됨"}</span></div>', unsafe_allow_html=True)
         
         if is_upload_run:
@@ -428,10 +447,16 @@ def render_main_page():
                 pm.stop_process(PROC_UPLOAD)
                 st.rerun()
         else:
-            if st.button("업로드 시작", key="start_upload_main", type="primary", use_container_width=True):
-                config = cm.get_all_upload_config()
-                pm.start_process(PROC_UPLOAD, str(UPLOAD_SCRIPT), config)
-                st.rerun()
+            selected = st.session_state.get('selected_platforms', [])
+            if st.button("업로드 시작", key="start_upload_main", type="primary", use_container_width=True, disabled=len(selected) == 0):
+                if selected:
+                    for p in all_platforms:
+                        cm.set_platform_enabled(p, p in selected)
+                    config = cm.get_all_upload_config(selected)
+                    pm.start_process(PROC_UPLOAD, str(UPLOAD_SCRIPT), config)
+                    st.rerun()
+                else:
+                    st.warning("업로드할 플랫폼을 선택해주세요.")
     
     with col_up2:
         deletion_status = pm.get_status(PROC_DELETION)
@@ -1289,20 +1314,39 @@ def render_settings_page():
             cm.set("google_sheet", "url", url)
             st.success("저장됨")
 
-        st.markdown("### 업로드 플랫폼 설정")
+        st.markdown("### 업로드 플랫폼 관리")
+        st.caption("향후 광고 업체 추가를 위해 플랫폼을 동적으로 관리할 수 있습니다")
         
-        platforms = cm.get("upload_platforms") or {}
-        newstown_cfg = platforms.get("newstown", {"enabled": True})
-        golftimes_cfg = platforms.get("golftimes", {"enabled": False})
+        platforms = cm.get_all_platforms()
+        platform_names = {"newstown": "뉴스타운", "golftimes": "골프타임즈"}
         
-        newstown_enabled = st.checkbox("뉴스타운 활성화", value=newstown_cfg.get("enabled", True), key="newstown_toggle")
-        golftimes_enabled = st.checkbox("골프타임즈 활성화", value=golftimes_cfg.get("enabled", False), key="golftimes_toggle")
+        for platform_id, platform_cfg in platforms.items():
+            display_name = platform_cfg.get("display_name", platform_names.get(platform_id, platform_id))
+            cols = platform_cfg.get("title_column", 0), platform_cfg.get("content_column", 0), platform_cfg.get("completed_column", 0)
+            st.markdown(f"**{display_name}** (열: {cols[0]}, {cols[1]}, {cols[2]})")
         
-        if st.button("플랫폼 설정 저장", key="save_platforms"):
-            platforms["newstown"]["enabled"] = newstown_enabled
-            platforms["golftimes"]["enabled"] = golftimes_enabled
-            cm.set_section("upload_platforms", platforms)
-            st.success("플랫폼 설정 저장됨")
+        with st.expander("새 플랫폼 추가", expanded=False):
+            new_id = st.text_input("플랫폼 ID (영문)", key="new_platform_id", placeholder="예: newsite")
+            new_name = st.text_input("플랫폼 이름", key="new_platform_name", placeholder="예: 새로운사이트")
+            col_t, col_c, col_d = st.columns(3)
+            with col_t:
+                new_title_col = st.number_input("제목 열", min_value=1, max_value=26, value=14, key="new_title_col")
+            with col_c:
+                new_content_col = st.number_input("내용 열", min_value=1, max_value=26, value=15, key="new_content_col")
+            with col_d:
+                new_done_col = st.number_input("완료 열", min_value=1, max_value=26, value=16, key="new_done_col")
+            
+            if st.button("플랫폼 추가", key="add_platform"):
+                if new_id and new_name:
+                    if new_id not in platforms:
+                        cm.add_platform(new_id, new_name, new_title_col, new_content_col, new_done_col)
+                        cm.set_section(new_id, {"site_id": "", "site_pw": ""})
+                        st.success(f"'{new_name}' 플랫폼이 추가되었습니다")
+                        st.rerun()
+                    else:
+                        st.warning("이미 존재하는 플랫폼 ID입니다")
+                else:
+                    st.warning("플랫폼 ID와 이름을 입력해주세요")
         
         st.markdown("### 뉴스타운 로그인")
         site_id = st.text_input("아이디", value=cm.get("newstown", "site_id", ""), key="newstown_id")
