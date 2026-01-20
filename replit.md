@@ -1,7 +1,7 @@
 # 뉴스타운 자동화 대시보드
 
 ## 프로젝트 개요
-네이버 뉴스를 수집하여 PostgreSQL 데이터베이스와 구글 시트에 저장하고, 뉴스타운에 자동으로 업로드하는 시스템입니다. Streamlit 기반 GUI 대시보드로 모든 기능을 통합 관리합니다.
+네이버 뉴스를 수집하여 PostgreSQL 데이터베이스와 구글 시트에 저장하고, 뉴스타운과 골프타임즈에 자동으로 업로드하는 멀티 플랫폼 시스템입니다. Streamlit 기반 GUI 대시보드로 모든 기능을 통합 관리합니다.
 
 ## 로그인 계정
 | 아이디 | 비밀번호 | 권한 |
@@ -14,7 +14,8 @@
 - **키워드 검색**: 수동으로 뉴스 검색 후 선택하여 저장
 - **뉴스 조회**: DB/시트 저장 뉴스와 뉴스타운 업로드 뉴스 구분 표시
 - **프롬프트 관리**: AI 뉴스 가공용 프롬프트 관리
-- **업로드 감시**: Selenium으로 뉴스타운 자동 업로드
+- **멀티 플랫폼 업로드**: 뉴스타운(E,F,H열)과 골프타임즈(J,K,L열) 동시 지원
+- **업로드 감시**: Selenium으로 뉴스타운/골프타임즈 자동 업로드
 - **완료행 삭제**: 업로드 완료된 행 자동 삭제
 - **키워드 관리**: 개별 삭제 가능한 Core/General 키워드 관리
 
@@ -27,7 +28,8 @@ streamlit run dashboard.py
 ```
 ├── dashboard.py              # Streamlit 대시보드 (메인 GUI)
 ├── naver_to_sheet.py         # 뉴스 수집 스크립트
-├── 뉴스타운_자동업로드_감시.py  # 업로드 감시 스크립트 (Selenium)
+├── 뉴스타운_자동업로드_감시.py  # 멀티 플랫폼 업로드 감시 스크립트 (Selenium)
+├── 골프타임즈_자동업로드.py    # 골프타임즈 업로드 모듈 (Selenium)
 ├── 뉴스타운_완료행_삭제.py     # 완료행 삭제 스크립트
 ├── config/
 │   ├── dashboard_config.json # 대시보드 설정
@@ -57,7 +59,7 @@ streamlit run dashboard.py
 ### settings (신규 - 2024-12-31)
 - id, key (unique), value (JSON), updated_at
 - **배포 환경에서도 설정이 유지되도록 DB에 저장**
-- key 목록: news_collection, category_keywords, upload_monitor, row_deletion, google_sheet, newstown, naver_api, news_schedule
+- key 목록: news_collection, category_keywords, upload_monitor, row_deletion, google_sheet, newstown, golftimes, naver_api, news_schedule, upload_platforms
 
 ## 필수 설정
 - `DATABASE_URL`: PostgreSQL 연결 (자동)
@@ -79,6 +81,9 @@ streamlit run dashboard.py
 - 키워드 개별 삭제 기능
 
 ## 최근 변경사항
+- 2026-01-20: **멀티 플랫폼 업로드** - 뉴스타운과 골프타임즈 동시 지원, 설정 페이지에서 개별 활성화 가능
+- 2026-01-20: **골프타임즈 자동업로드 모듈** - 골프타임즈_자동업로드.py 추가 (문화→핫이슈 섹션)
+- 2026-01-20: **스프레드시트 열 분리** - 뉴스타운(E,F,H열), 골프타임즈(J,K,L열) 독립 관리
 - 2024-12-31: **설정 DB 저장** - 키워드, 수집 간격 등 모든 설정을 PostgreSQL에 저장하여 배포 후에도 설정 유지
 - 2024-12-31: **백그라운드 스케줄러 DB 기반** - 대시보드 없이도 설정된 간격으로 자동 수집
 - 2024-12-31: **키워드 무작위 수집** - 매 실행 시 키워드 순서를 랜덤 셔플하여 균등 수집
