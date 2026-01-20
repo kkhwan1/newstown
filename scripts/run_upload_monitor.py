@@ -68,8 +68,18 @@ def run_monitor(config):
     site_pw = config.get('site_pw', '')
     check_interval = config.get('check_interval', 30)
     completed_column = config.get('completed_column', 8)
+    concurrent_uploads = config.get('concurrent_uploads', 1)
+    
+    golftimes_id = config.get('golftimes_id', 'thegolftimes')
+    golftimes_pw = config.get('golftimes_pw', 'Golf1220')
+    
+    platforms = config.get('platforms', {})
+    newstown_enabled = platforms.get('newstown', {}).get('enabled', True)
+    golftimes_enabled = platforms.get('golftimes', {}).get('enabled', False)
 
     log(f"설정: 체크 간격 {check_interval}초")
+    log(f"뉴스타운: {'활성화' if newstown_enabled else '비활성화'}")
+    log(f"골프타임즈: {'활성화' if golftimes_enabled else '비활성화'}")
 
     import importlib.util
     module_path = os.path.join(parent_dir, '뉴스타운_자동업로드_감시.py')
@@ -82,6 +92,12 @@ def run_monitor(config):
     upload_module.SITE_PW = site_pw
     upload_module.CHECK_INTERVAL = check_interval
     upload_module.COMPLETED_COLUMN = completed_column
+    upload_module.CONCURRENT_UPLOADS = concurrent_uploads
+    
+    upload_module.GOLFTIMES_ID = golftimes_id
+    upload_module.GOLFTIMES_PW = golftimes_pw
+    upload_module.NEWSTOWN_ENABLED = newstown_enabled
+    upload_module.GOLFTIMES_ENABLED = golftimes_enabled
 
     spec.loader.exec_module(upload_module)
 
@@ -118,14 +134,23 @@ def run_monitor(config):
             check_count += 1
             log(f"[{check_count}] 시트 확인 중...")
 
-            result = upload_module.check_and_upload(sheet)
+            if newstown_enabled:
+                newstown_result = upload_module.check_and_upload(sheet)
+                if newstown_result is None:
+                    log(f"[{check_count}] [뉴스타운] 업로드할 항목 없음")
+                elif newstown_result:
+                    log(f"[{check_count}] [뉴스타운] 업로드 완료!", "SUCCESS")
+                else:
+                    log(f"[{check_count}] [뉴스타운] 업로드 실패", "WARN")
 
-            if result is None:
-                log(f"[{check_count}] 업로드할 항목 없음")
-            elif result:
-                log(f"[{check_count}] 뉴스타운 업로드 완료!", "SUCCESS")
-            else:
-                log(f"[{check_count}] 업로드 실패 - 다음 체크에서 재시도", "WARN")
+            if golftimes_enabled:
+                golftimes_result = upload_module.check_and_upload_golftimes(sheet)
+                if golftimes_result is None:
+                    log(f"[{check_count}] [골프타임즈] 업로드할 항목 없음")
+                elif golftimes_result:
+                    log(f"[{check_count}] [골프타임즈] 업로드 완료!", "SUCCESS")
+                else:
+                    log(f"[{check_count}] [골프타임즈] 업로드 실패", "WARN")
 
             if interruptible_sleep(check_interval):
                 log("대기 중 종료 신호 수신", "WARN")
