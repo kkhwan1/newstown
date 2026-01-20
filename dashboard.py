@@ -404,8 +404,17 @@ def render_main_page():
     keywords = dict(news_config.get('keywords', {"연애": 15, "경제": 15, "스포츠": 15}))
     categories = ["연애", "경제", "스포츠"]
 
-    st.markdown("### 뉴스타운 업로드")
-    st.caption("스프레드시트의 뉴스를 뉴스타운에 자동 업로드합니다")
+    st.markdown("### 뉴스 자동 업로드")
+    platforms = cm.get("upload_platforms") or {}
+    newstown_on = platforms.get("newstown", {}).get("enabled", True)
+    golftimes_on = platforms.get("golftimes", {}).get("enabled", False)
+    platform_list = []
+    if newstown_on:
+        platform_list.append("뉴스타운")
+    if golftimes_on:
+        platform_list.append("골프타임즈")
+    platform_str = ", ".join(platform_list) if platform_list else "(비활성화됨)"
+    st.caption(f"활성화된 플랫폼: {platform_str}")
     
     col_up1, col_up2 = st.columns(2)
     
@@ -419,8 +428,8 @@ def render_main_page():
                 pm.stop_process(PROC_UPLOAD)
                 st.rerun()
         else:
-            if st.button("뉴스타운 업로드 시작", key="start_upload_main", type="primary", use_container_width=True):
-                config = cm.get_upload_config()
+            if st.button("업로드 시작", key="start_upload_main", type="primary", use_container_width=True):
+                config = cm.get_all_upload_config()
                 pm.start_process(PROC_UPLOAD, str(UPLOAD_SCRIPT), config)
                 st.rerun()
     
