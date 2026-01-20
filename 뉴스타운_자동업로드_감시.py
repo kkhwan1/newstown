@@ -54,19 +54,33 @@ SHEET_URL = _process_config.get('sheet_url', "https://docs.google.com/spreadshee
 SITE_ID = _process_config.get('site_id', "kim123")
 SITE_PW = _process_config.get('site_pw', "love1105()")
 
-# 3. 업로드 완료 표시 열 (H열=8번째 열, 업로드 완료 시 "완료" 표시)
-COMPLETED_COLUMN = 8  # H열
+# 3. 골프타임즈 아이디 / 비밀번호
+GOLFTIMES_ID = _process_config.get('golftimes_id', "thegolftimes")
+GOLFTIMES_PW = _process_config.get('golftimes_pw', "Golf1220")
 
-# 4. 감시 간격 (초 단위)
+# 4. 업로드 완료 표시 열 (뉴스타운: H열=8번째 열)
+COMPLETED_COLUMN = 8  # H열 (뉴스타운)
+GOLFTIMES_COMPLETED_COLUMN = 12  # L열 (골프타임즈)
+
+# 5. 골프타임즈 열 설정 (J열=10, K열=11)
+GOLFTIMES_TITLE_COLUMN = 10  # J열 (골프타임즈 AI_제목)
+GOLFTIMES_CONTENT_COLUMN = 11  # K열 (골프타임즈 AI_본문)
+
+# 6. 감시 간격 (초 단위)
 CHECK_INTERVAL = _process_config.get('check_interval', 30)
 
-# 5. API 재시도 설정
+# 7. API 재시도 설정
 MAX_RETRIES = 5  # 최대 재시도 횟수
 INITIAL_RETRY_DELAY = 60  # 초기 재시도 대기 시간 (초) - 할당량 초과 시 60초 대기
 MAX_RETRY_DELAY = 300  # 최대 재시도 대기 시간 (초) - 최대 5분까지 대기
 
-# 6. 동시 업로드 개수 설정 (대시보드에서 설정 가능)
+# 8. 동시 업로드 개수 설정 (대시보드에서 설정 가능)
 CONCURRENT_UPLOADS = _process_config.get('concurrent_uploads', 2)  # 동시에 업로드할 뉴스 개수 (1~3)
+
+# 9. 플랫폼 활성화 설정 (대시보드에서 설정)
+_platforms = _process_config.get('platforms', {})
+NEWSTOWN_ENABLED = _platforms.get('newstown', {}).get('enabled', True)
+GOLFTIMES_ENABLED = _platforms.get('golftimes', {}).get('enabled', False)
 # ==========================================
 
 def retry_with_backoff(func, *args, **kwargs):
@@ -458,15 +472,134 @@ def check_and_upload(sheet):
         traceback.print_exc()
         return False
 
+
+def upload_to_golftimes(title, content):
+    """골프타임즈에 기사를 자동으로 업로드하는 함수 (셀레니움)
+    
+    Args:
+        title: 기사 제목
+        content: 기사 본문
+    """
+    try:
+        from 골프타임즈_자동업로드 import upload_to_golftimes as golftimes_upload
+        return golftimes_upload(title, content, headless=True)
+    except ImportError as e:
+        print(f"❌ 골프타임즈 업로드 모듈 import 실패: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ 골프타임즈 업로드 실패: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def check_and_upload_golftimes(sheet):
+    """시트를 확인하고 골프타임즈에 업로드할 항목이 있으면 업로드하는 함수
+    
+    J열(10): 골프타임즈 AI_제목
+    K열(11): 골프타임즈 AI_본문  
+    L열(12): 골프타임즈 완료 표시
+    
+    Returns:
+        True: 업로드 성공 (1개 이상)
+        False: 업로드 실패
+        None: 업로드할 항목 없음
+    """
+    if not GOLFTIMES_ENABLED:
+        return None
+        
+    try:
+        rows = retry_with_backoff(sheet.get_all_values)
+        
+        items_to_upload = []
+        
+        for i, row in enumerate(rows[1:], start=2):
+            if len(row) < GOLFTIMES_CONTENT_COLUMN:
+                continue
+            
+            gt_title = row[GOLFTIMES_TITLE_COLUMN - 1].strip() if len(row) >= GOLFTIMES_TITLE_COLUMN and row[GOLFTIMES_TITLE_COLUMN - 1] else ""
+            gt_content = row[GOLFTIMES_CONTENT_COLUMN - 1].strip() if len(row) >= GOLFTIMES_CONTENT_COLUMN and row[GOLFTIMES_CONTENT_COLUMN - 1] else ""
+            
+            if not gt_title or not gt_content:
+                continue
+            
+            completed_status = ""
+            if len(row) >= GOLFTIMES_COMPLETED_COLUMN:
+                completed_status = row[GOLFTIMES_COMPLETED_COLUMN - 1].strip() if row[GOLFTIMES_COMPLETED_COLUMN - 1] else ""
+            
+            if completed_status and "완료" in completed_status:
+                continue
+            
+            link = row[2].strip() if len(row) > 2 and row[2] else ""
+            
+            items_to_upload.append({
+                'row_num': i,
+                'gt_title': gt_title,
+                'gt_content': gt_content,
+                'link': link
+            })
+            
+            if len(items_to_upload) >= 1:
+                break
+        
+        if not items_to_upload:
+            return None
+        
+        print(f"\n[{get_kst_time()}] [골프타임즈] 업로드할 항목 {len(items_to_upload)}개 발견")
+        
+        success_count = 0
+        fail_count = 0
+        
+        for item in items_to_upload:
+            row_num = item['row_num']
+            gt_title = item['gt_title']
+            gt_content = item['gt_content']
+            link = item['link']
+            
+            print(f"\n[{get_kst_time()}] [골프타임즈] 행 {row_num}번 업로드 시작")
+            print(f"   J열(AI_제목): {gt_title[:50]}...")
+            
+            success = upload_to_golftimes(gt_title, gt_content)
+            
+            if success:
+                try:
+                    completed_time = f"완료 {get_kst_time()}"
+                    retry_with_backoff(sheet.update_cell, row_num, GOLFTIMES_COMPLETED_COLUMN, completed_time)
+                    print(f"✅ [골프타임즈] 행 {row_num}번 업로드 완료!")
+                    success_count += 1
+                except Exception as sheet_error:
+                    print(f"✅ [골프타임즈] 행 {row_num}번 업로드 완료! (시트 업데이트 실패: {sheet_error})")
+                    success_count += 1
+            else:
+                try:
+                    retry_with_backoff(sheet.update_cell, row_num, GOLFTIMES_COMPLETED_COLUMN, f"실패 {get_kst_time()}")
+                    print(f"❌ [골프타임즈] 행 {row_num}번 업로드 실패!")
+                except Exception as sheet_error:
+                    print(f"❌ [골프타임즈] 행 {row_num}번 업로드 실패! (시트 업데이트 실패: {sheet_error})")
+                fail_count += 1
+        
+        print(f"\n[{get_kst_time()}] [골프타임즈 결과] 성공: {success_count}개, 실패: {fail_count}개")
+        
+        return success_count > 0
+        
+    except Exception as e:
+        print(f"❌ [골프타임즈] 시트 확인 중 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def main():
     """구글 시트를 지속적으로 감시하여 자동 업로드하는 메인 함수"""
     
     print("="*60, flush=True)
-    print("  뉴스타운 자동 업로드 (감시 모드)", flush=True)
+    print("  뉴스 자동 업로드 (멀티 플랫폼 감시 모드)", flush=True)
     print("="*60, flush=True)
     print(f"\n📡 구글 시트 연결 중...", flush=True)
     print(f"⏰ 감시 간격: {CHECK_INTERVAL}초", flush=True)
     print(f"🚀 동시 업로드: {CONCURRENT_UPLOADS}개", flush=True)
+    print(f"📺 뉴스타운: {'활성화' if NEWSTOWN_ENABLED else '비활성화'}", flush=True)
+    print(f"⛳ 골프타임즈: {'활성화' if GOLFTIMES_ENABLED else '비활성화'}", flush=True)
     print(f"🛑 종료하려면 Ctrl+C를 누르세요\n", flush=True)
     
     # 인증 파일 로드
@@ -490,8 +623,10 @@ def main():
         doc = retry_with_backoff(client.open_by_url, SHEET_URL)
         sheet = doc.sheet1  # 첫 번째 시트 사용
         print("✅ 시트 연결 성공")
-        print("\n👀 E열(AI_제목)과 F열(AI_본문)을 감시 중...")
-        print("   E열/F열이 채워지면 자동으로 뉴스타운에 업로드합니다.\n")
+        if NEWSTOWN_ENABLED:
+            print("\n👀 [뉴스타운] E열(AI_제목)과 F열(AI_본문)을 감시 중...")
+        if GOLFTIMES_ENABLED:
+            print("👀 [골프타임즈] J열(AI_제목)과 K열(AI_본문)을 감시 중...")
     except Exception as e:
         print(f"❌ 시트 연결 실패: {e}")
         import traceback
@@ -505,18 +640,37 @@ def main():
         while True:
             try:
                 check_count += 1
-                print(f"[{get_kst_time()}] {check_count}번째 확인 중...")
+                print(f"\n[{get_kst_time()}] {check_count}번째 확인 중...")
                 
-                result = check_and_upload(sheet)
+                newstown_result = None
+                golftimes_result = None
                 
-                if result is None:
-                    print(f"   ⏸️ 업로드할 항목 없음 (E열/F열이 비어있거나 이미 업로드 완료)")
-                    print(f"   → E열/F열에 데이터가 채워질 때까지 대기 중...")
-                    print(f"   다음 확인까지 {CHECK_INTERVAL}초 대기...")
-                elif result:
-                    print(f"   ✅ 업로드 완료! 다음 확인까지 {CHECK_INTERVAL}초 대기...")
-                else:
-                    print(f"   ❌ 업로드 실패 (다음 확인까지 {CHECK_INTERVAL}초 대기)")
+                if NEWSTOWN_ENABLED:
+                    print("   [뉴스타운] 확인 중...")
+                    newstown_result = check_and_upload(sheet)
+                    
+                    if newstown_result is None:
+                        print(f"   [뉴스타운] 업로드할 항목 없음")
+                    elif newstown_result:
+                        print(f"   [뉴스타운] 업로드 완료!")
+                    else:
+                        print(f"   [뉴스타운] 업로드 실패")
+                
+                if GOLFTIMES_ENABLED:
+                    print("   [골프타임즈] 확인 중...")
+                    golftimes_result = check_and_upload_golftimes(sheet)
+                    
+                    if golftimes_result is None:
+                        print(f"   [골프타임즈] 업로드할 항목 없음")
+                    elif golftimes_result:
+                        print(f"   [골프타임즈] 업로드 완료!")
+                    else:
+                        print(f"   [골프타임즈] 업로드 실패")
+                
+                if not NEWSTOWN_ENABLED and not GOLFTIMES_ENABLED:
+                    print(f"   ⚠️ 활성화된 플랫폼이 없습니다. 설정을 확인해주세요.")
+                
+                print(f"   다음 확인까지 {CHECK_INTERVAL}초 대기...")
                 
                 # 지정된 간격만큼 대기
                 time.sleep(CHECK_INTERVAL)
