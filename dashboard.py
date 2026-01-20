@@ -1280,12 +1280,35 @@ def render_settings_page():
             cm.set("google_sheet", "url", url)
             st.success("저장됨")
 
-        st.markdown("### 뉴스타운")
-        site_id = st.text_input("아이디", value=cm.get("newstown", "site_id", ""))
-        site_pw = st.text_input("비밀번호", value=cm.get("newstown", "site_pw", ""), type="password")
+        st.markdown("### 업로드 플랫폼 설정")
+        
+        platforms = cm.get("upload_platforms") or {}
+        newstown_cfg = platforms.get("newstown", {"enabled": True})
+        golftimes_cfg = platforms.get("golftimes", {"enabled": False})
+        
+        newstown_enabled = st.checkbox("뉴스타운 활성화", value=newstown_cfg.get("enabled", True), key="newstown_toggle")
+        golftimes_enabled = st.checkbox("골프타임즈 활성화", value=golftimes_cfg.get("enabled", False), key="golftimes_toggle")
+        
+        if st.button("플랫폼 설정 저장", key="save_platforms"):
+            platforms["newstown"]["enabled"] = newstown_enabled
+            platforms["golftimes"]["enabled"] = golftimes_enabled
+            cm.set_section("upload_platforms", platforms)
+            st.success("플랫폼 설정 저장됨")
+        
+        st.markdown("### 뉴스타운 로그인")
+        site_id = st.text_input("아이디", value=cm.get("newstown", "site_id", ""), key="newstown_id")
+        site_pw = st.text_input("비밀번호", value=cm.get("newstown", "site_pw", ""), type="password", key="newstown_pw")
         if st.button("저장", key="save_news"):
             cm.set("newstown", "site_id", site_id)
             cm.set("newstown", "site_pw", site_pw)
+            st.success("저장됨")
+
+        st.markdown("### 골프타임즈 로그인")
+        gt_id = st.text_input("아이디", value=cm.get("golftimes", "site_id", "thegolftimes"), key="golftimes_id")
+        gt_pw = st.text_input("비밀번호", value=cm.get("golftimes", "site_pw", "Golf1220"), type="password", key="golftimes_pw")
+        if st.button("저장", key="save_golftimes"):
+            cm.set("golftimes", "site_id", gt_id)
+            cm.set("golftimes", "site_pw", gt_pw)
             st.success("저장됨")
     
     with c2:
