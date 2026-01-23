@@ -221,14 +221,8 @@ def login_to_newstown(driver, wait):
     time.sleep(1.5) # 로그인 처리 대기
     return True
 
-def upload_to_newstown(title, content, category=None):
-    """뉴스타운에 기사를 자동으로 업로드하는 함수 (셀레니움)
-    
-    Args:
-        title: 기사 제목
-        content: 기사 본문
-        category: 카테고리 (연애, 경제, 스포츠 등) - D열 값
-    """
+def _upload_to_newstown_internal(title, content, category=None):
+    """뉴스타운 업로드 내부 함수"""
     
     driver = get_chrome_driver()
     if driver is None:
@@ -239,97 +233,68 @@ def upload_to_newstown(title, content, category=None):
     try:
         print(f"\n🚀 [뉴스타운 업로드 시작] '{title[:50]}...'")
 
-        # -------------------------------------------------
-        # 1. 로그인 단계
-        # -------------------------------------------------
         login_to_newstown(driver, wait)
 
-        # -------------------------------------------------
-        # 2. 글쓰기 폼 이동
-        # -------------------------------------------------
         driver.get("http://www.newstown.co.kr/news/userArticleWriteForm.html")
         
-        # -------------------------------------------------
-        # 3. 섹션 선택 (1차 섹션 -> 2차 섹션)
-        # -------------------------------------------------
         try:
-            # 페이지 로드 대기
             wait.until(EC.presence_of_element_located((By.NAME, "sectionCode")))
-            time.sleep(1)  # 페이지 완전 로드 대기
+            time.sleep(1)
             
-            # 1차 섹션 드롭다운 찾기 및 선택
             section_element = wait.until(EC.presence_of_element_located((By.NAME, "sectionCode")))
             section_select = Select(section_element)
             section_select.select_by_visible_text("데일리 핫이슈")
             print("✅ 1차 섹션 선택: 데일리 핫이슈")
-            time.sleep(1.5)  # 2차 섹션 옵션이 로드될 때까지 대기
+            time.sleep(1.5)
             
-            # 2차 섹션 드롭다운 찾기 및 선택 (카테고리에 따라 자동 선택)
             sub_section_element = wait.until(EC.presence_of_element_located((By.NAME, "subSectionCode")))
             sub_section_select = Select(sub_section_element)
             
-            # 카테고리 매핑: D열 값에 따라 2차 섹션 선택
-            # 연애 → 연예, 경제 → 경제, 스포츠 → 스포츠
             category_mapping = {
                 "연애": "연예",
                 "경제": "경제",
                 "스포츠": "스포츠"
             }
             
-            # category가 전달된 경우 매핑, 없으면 기본값 "연예"
             if category and category in category_mapping:
                 sub_section_text = category_mapping[category]
             else:
-                sub_section_text = "연예"  # 기본값
+                sub_section_text = "연예"
             
             sub_section_select.select_by_visible_text(sub_section_text)
             print(f"✅ 2차 섹션 선택: {sub_section_text} (카테고리: {category if category else '기본값'})")
-            time.sleep(1.5)  # 3차 섹션 옵션이 로드될 때까지 대기
+            time.sleep(1.5)
             
-            # 3차 섹션(연재) 드롭다운 찾기 및 선택
             serial_element = wait.until(EC.presence_of_element_located((By.NAME, "serialCode")))
             serial_select = Select(serial_element)
             serial_select.select_by_visible_text("일반뉴스")
             print("✅ 3차 섹션 선택: 일반뉴스")
-            time.sleep(0.5)  # 선택 완료 대기
+            time.sleep(0.5)
         except Exception as e:
             print(f"⚠️ 섹션 선택 중 경고: {e}")
             import traceback
             traceback.print_exc()
 
-        # -------------------------------------------------
-        # 4. 제목 입력
-        # -------------------------------------------------
         driver.find_element(By.ID, "title").send_keys(title)
 
-        # -------------------------------------------------
-        # 5. 본문 입력 (CKEditor / iframe 처리)
-        # -------------------------------------------------
         print("✍️ 본문 작성 중...")
         
-        # iframe 찾기 (에디터는 보통 iframe 안에 숨어있음)
         iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-        driver.switch_to.frame(iframe) # iframe 내부로 진입
+        driver.switch_to.frame(iframe)
         
         body_area = driver.find_element(By.TAG_NAME, "body")
-        body_area.clear() # 기존 내용 비우기
-        body_area.send_keys(content) # 구글 시트 내용 입력
+        body_area.clear()
+        body_area.send_keys(content)
         
-        driver.switch_to.default_content() # 다시 메인 화면으로 복귀
+        driver.switch_to.default_content()
 
-        # -------------------------------------------------
-        # 6. 저장 버튼 클릭
-        # -------------------------------------------------
         print("💾 저장 버튼 클릭...")
         save_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
         
-        # 자바스크립트로 강제 클릭 (오류 방지)
         driver.execute_script("arguments[0].click();", save_btn)
         
-        # 저장 완료 대기 (3초)
         time.sleep(3) 
         
-        # 성공 여부 확인 (페이지가 이동했거나, 알림창이 떴는지 등)
         print("✅ 뉴스타운 업로드 완료!")
         return True
 
@@ -339,8 +304,43 @@ def upload_to_newstown(title, content, category=None):
         traceback.print_exc()
         return False
     finally:
-        # 브라우저 닫기
         driver.quit()
+
+
+def upload_to_newstown(title, content, category=None, timeout=120):
+    """뉴스타운에 기사를 자동으로 업로드하는 함수 (셀레니움) - 타임아웃 적용
+    
+    Args:
+        title: 기사 제목
+        content: 기사 본문
+        category: 카테고리 (연애, 경제, 스포츠 등) - D열 값
+        timeout: 전체 업로드 타임아웃 (초)
+    """
+    import threading
+    
+    result = [False]
+    error_msg = [None]
+    
+    def upload_task():
+        try:
+            result[0] = _upload_to_newstown_internal(title, content, category)
+        except Exception as e:
+            error_msg[0] = str(e)
+            import traceback
+            traceback.print_exc()
+    
+    thread = threading.Thread(target=upload_task)
+    thread.start()
+    thread.join(timeout=timeout)
+    
+    if thread.is_alive():
+        print(f"⚠️ [뉴스타운] 타임아웃 ({timeout}초) - 업로드 중단")
+        return False
+    
+    if error_msg[0]:
+        print(f"❌ [뉴스타운] 업로드 실패: {error_msg[0]}")
+    
+    return result[0]
 
 def upload_single_item(item_data):
     """단일 항목을 업로드하는 함수 (ThreadPoolExecutor에서 호출)

@@ -183,30 +183,63 @@ class GolfTimesUploader:
             print("[골프타임즈] 브라우저 종료")
 
 
-def upload_to_golftimes(title, content, headless=True):
-    """골프타임즈 업로드 진입점 함수"""
+def upload_to_golftimes(title, content, headless=True, timeout=120):
+    """골프타임즈 업로드 진입점 함수
+    
+    Args:
+        title: 기사 제목
+        content: 기사 본문
+        headless: 헤드리스 모드 여부
+        timeout: 전체 업로드 타임아웃 (초)
+    """
+    import signal
+    import threading
+    
     uploader = GolfTimesUploader(headless=headless)
-
-    try:
-        if not uploader.get_driver():
-            return False
-
-        if not uploader.login():
-            return False
-
-        if not uploader.write_article(title, content):
-            return False
-
-        print("✅ [골프타임즈] 업로드 성공")
-        return True
-
-    except Exception as e:
-        print(f"❌ [골프타임즈] 업로드 중 오류: {e}")
-        traceback.print_exc()
+    result = [False]
+    error_msg = [None]
+    
+    def upload_task():
+        try:
+            if not uploader.get_driver():
+                error_msg[0] = "ChromeDriver 시작 실패"
+                return
+            
+            if not uploader.login():
+                error_msg[0] = "로그인 실패"
+                return
+            
+            if not uploader.write_article(title, content):
+                error_msg[0] = "기사 작성 실패"
+                return
+            
+            print("✅ [골프타임즈] 업로드 성공")
+            result[0] = True
+        except Exception as e:
+            error_msg[0] = str(e)
+            traceback.print_exc()
+    
+    thread = threading.Thread(target=upload_task)
+    thread.start()
+    thread.join(timeout=timeout)
+    
+    if thread.is_alive():
+        print(f"⚠️ [골프타임즈] 타임아웃 ({timeout}초) - 업로드 중단")
+        try:
+            uploader.close()
+        except:
+            pass
         return False
-
-    finally:
+    
+    try:
         uploader.close()
+    except:
+        pass
+    
+    if error_msg[0]:
+        print(f"❌ [골프타임즈] 업로드 실패: {error_msg[0]}")
+    
+    return result[0]
 
 
 if __name__ == "__main__":
