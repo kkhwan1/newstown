@@ -77,6 +77,7 @@ class GolfTimesUploader:
         try:
             print("[골프타임즈] 로그인 페이지 이동...")
             self.driver.get(GOLFTIMES_LOGIN_URL)
+            time.sleep(2)
 
             id_input = self.wait.until(
                 EC.presence_of_element_located((By.NAME, "user_id")))
@@ -89,12 +90,12 @@ class GolfTimesUploader:
             pw_input.send_keys(GOLFTIMES_PW)
             print("[골프타임즈] 비밀번호 입력 완료")
 
-            login_btn = self.driver.find_element(By.CSS_SELECTOR,
-                                                 ".login_submit")
+            login_btn = self.wait.until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.login_submit")))
             login_btn.click()
             print("[골프타임즈] 로그인 버튼 클릭")
 
-            time.sleep(2)
+            time.sleep(3)
 
             try:
                 alert = self.driver.switch_to.alert
@@ -143,14 +144,25 @@ class GolfTimesUploader:
             self.driver.execute_script(js_script)
 
             print("[골프타임즈] 등록 버튼 클릭...")
-            submit_btn = self.driver.find_element(
-                By.CSS_SELECTOR, "a[href*='newsWriteFormSubmit']")
-            submit_btn.click()
+            try:
+                submit_btn = self.wait.until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a[href*='newsWriteFormSubmit']")))
+                submit_btn.click()
+            except:
+                try:
+                    submit_btn = self.driver.find_element(By.XPATH, "//a[contains(text(), '등록')]")
+                    submit_btn.click()
+                except:
+                    self.driver.execute_script("newsWriteFormSubmit();")
+            
+            print("[골프타임즈] 등록 버튼 클릭 완료")
 
-            time.sleep(3)
+            time.sleep(5)
 
             try:
                 alert = self.driver.switch_to.alert
+                alert_text = alert.text
+                print(f"[골프타임즈] Alert 메시지: {alert_text}")
                 alert.accept()
                 print("[골프타임즈] 등록 후 Alert 확인 및 처리")
             except:
