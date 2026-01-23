@@ -51,12 +51,65 @@ def interruptible_sleep(seconds):
     return _shutdown_event.wait(timeout=seconds)
 
 def load_config():
-    """환경 변수에서 설정 로드"""
+    """환경 변수 또는 DB에서 설정 로드"""
     config_str = os.environ.get('PROCESS_CONFIG', '{}')
     try:
-        return json.loads(config_str)
+        config = json.loads(config_str)
+        if config.get('sheet_url'):
+            return config
     except json.JSONDecodeError:
-        log("설정 파싱 실패, 기본값 사용", "WARN")
+        pass
+    
+    log("환경변수에 설정 없음, DB에서 직접 로드", "INFO")
+    try:
+        import psycopg2
+        database_url = os.environ.get('DATABASE_URL')
+        if not database_url:
+            log("DATABASE_URL 없음", "ERROR")
+            return {}
+        
+        conn = psycopg2.connect(database_url)
+        cur = conn.cursor()
+        
+        config = {}
+        
+        cur.execute("SELECT value FROM settings WHERE key = 'google_sheet'")
+        r = cur.fetchone()
+        if r: config['sheet_url'] = json.loads(r[0]).get('url', '')
+        
+        cur.execute("SELECT value FROM settings WHERE key = 'newstown'")
+        r = cur.fetchone()
+        if r:
+            nt = json.loads(r[0])
+            config['site_id'] = nt.get('site_id', '')
+            config['site_pw'] = nt.get('site_pw', '')
+        
+        cur.execute("SELECT value FROM settings WHERE key = 'golftimes'")
+        r = cur.fetchone()
+        if r:
+            gt = json.loads(r[0])
+            config['golftimes_id'] = gt.get('site_id', 'thegolftimes')
+            config['golftimes_pw'] = gt.get('site_pw', 'Golf1220')
+        
+        cur.execute("SELECT value FROM settings WHERE key = 'upload_monitor'")
+        r = cur.fetchone()
+        if r:
+            um = json.loads(r[0])
+            config['check_interval'] = um.get('check_interval', 30)
+            config['concurrent_uploads'] = um.get('concurrent_uploads', 2)
+        
+        cur.execute("SELECT value FROM settings WHERE key = 'upload_platforms'")
+        r = cur.fetchone()
+        if r:
+            config['platforms'] = json.loads(r[0])
+        
+        cur.close()
+        conn.close()
+        
+        log(f"DB에서 설정 로드 완료: 시트={config.get('sheet_url', '')[:30]}...", "SUCCESS")
+        return config
+    except Exception as e:
+        log(f"DB 설정 로드 실패: {e}", "ERROR")
         return {}
 
 def run_monitor(config):
