@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 import os
 import sys
 import json
@@ -1422,9 +1421,6 @@ def main():
     init_database()
     
     cm = st.session_state.config_manager
-    schedule_config = cm.get("news_schedule")
-    if schedule_config.get("enabled", False):
-        st_autorefresh(interval=5 * 60 * 1000, key="schedule_refresh")
     
     check_scheduled_news_collection()
 
