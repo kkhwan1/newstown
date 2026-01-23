@@ -137,10 +137,10 @@ class GolfTimesUploader:
             title_input.send_keys(title)
 
             print("[골프타임즈] 본문 입력 (CKEditor)...")
-            html_content = content.replace("`",
-                                           "\\`").replace("$", "\\$").replace(
-                                               "\n", "<br>")
-            js_script = f"CKEDITOR.instances['FCKeditor1'].setData('<p>{html_content}</p>');"
+            import json
+            html_content = content.replace("\n", "<br>")
+            escaped_content = json.dumps(f"<p>{html_content}</p>")
+            js_script = f"CKEDITOR.instances['FCKeditor1'].setData({escaped_content});"
             self.driver.execute_script(js_script)
 
             print("[골프타임즈] 등록 버튼 클릭...")

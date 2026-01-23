@@ -86,7 +86,9 @@ def run_monitor(config):
 
     spec = importlib.util.spec_from_file_location("upload_monitor", module_path)
     upload_module = importlib.util.module_from_spec(spec)
-
+    
+    spec.loader.exec_module(upload_module)
+    
     upload_module.SHEET_URL = sheet_url
     upload_module.SITE_ID = site_id
     upload_module.SITE_PW = site_pw
@@ -98,8 +100,6 @@ def run_monitor(config):
     upload_module.GOLFTIMES_PW = golftimes_pw
     upload_module.NEWSTOWN_ENABLED = newstown_enabled
     upload_module.GOLFTIMES_ENABLED = golftimes_enabled
-
-    spec.loader.exec_module(upload_module)
 
     import gspread
     from oauth2client.service_account import ServiceAccountCredentials
