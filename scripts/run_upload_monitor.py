@@ -50,6 +50,16 @@ def interruptible_sleep(seconds):
     """인터럽트 가능한 sleep"""
     return _shutdown_event.wait(timeout=seconds)
 
+def cleanup_chrome_processes():
+    """남아있는 Chrome/Chromium 프로세스 정리"""
+    import subprocess
+    try:
+        subprocess.run(['pkill', '-f', 'chrome'], capture_output=True, timeout=5)
+        subprocess.run(['pkill', '-f', 'chromium'], capture_output=True, timeout=5)
+        subprocess.run(['pkill', '-f', 'chromedriver'], capture_output=True, timeout=5)
+    except Exception as e:
+        pass
+
 def load_config():
     """환경 변수 또는 DB에서 설정 로드"""
     config_str = os.environ.get('PROCESS_CONFIG', '{}')
@@ -193,17 +203,24 @@ def run_monitor(config):
                     log(f"[{check_count}] [뉴스타운] 업로드할 항목 없음")
                 elif newstown_result:
                     log(f"[{check_count}] [뉴스타운] 업로드 완료!", "SUCCESS")
+                    cleanup_chrome_processes()
+                    time.sleep(3)
                 else:
                     log(f"[{check_count}] [뉴스타운] 업로드 실패", "WARN")
+                    cleanup_chrome_processes()
 
             if golftimes_enabled:
+                cleanup_chrome_processes()
+                time.sleep(1)
                 golftimes_result = upload_module.check_and_upload_golftimes(sheet)
                 if golftimes_result is None:
                     log(f"[{check_count}] [골프타임즈] 업로드할 항목 없음")
                 elif golftimes_result:
                     log(f"[{check_count}] [골프타임즈] 업로드 완료!", "SUCCESS")
+                    cleanup_chrome_processes()
                 else:
                     log(f"[{check_count}] [골프타임즈] 업로드 실패", "WARN")
+                    cleanup_chrome_processes()
 
             if interruptible_sleep(check_interval):
                 log("대기 중 종료 신호 수신", "WARN")

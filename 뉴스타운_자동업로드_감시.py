@@ -157,8 +157,8 @@ def update_db_status_to_uploaded(link):
         print(f"⚠️ DB 업데이트 오류: {e}")
         return False
 
-def get_chrome_driver():
-    """ChromeDriver 초기화 함수"""
+def get_chrome_driver(max_retries=3):
+    """ChromeDriver 초기화 함수 (재시도 포함)"""
     import shutil
     import os
     
@@ -171,38 +171,35 @@ def get_chrome_driver():
     options.add_argument("--disable-software-rasterizer")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")
+    options.add_argument("--single-process")
     
     chromium_path = shutil.which('chromium')
     chromedriver_path = shutil.which('chromedriver')
     
-    driver = None
-    
-    if chromium_path and chromedriver_path:
-        print(f"   Chromium: {chromium_path}")
-        print(f"   ChromeDriver: {chromedriver_path}")
+    if chromium_path:
         options.binary_location = chromium_path
-        try:
-            service = Service(chromedriver_path)
-            driver = webdriver.Chrome(service=service, options=options)
-            print("✅ Replit Chromium 사용 성공")
-            return driver
-        except Exception as e:
-            print(f"⚠️ Replit Chromium 오류: {e}")
     
-    try:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        print("✅ ChromeDriver 자동 설치 완료")
-    except Exception as e:
-        error_msg = str(e)
-        print(f"⚠️ ChromeDriverManager 오류: {error_msg}")
+    for attempt in range(max_retries):
         try:
-            driver = webdriver.Chrome(options=options)
-            print("✅ 시스템 PATH의 ChromeDriver 사용 성공")
-        except Exception as e2:
-            print(f"❌ ChromeDriver 초기화 실패: {e2}")
-            return None
-    return driver
+            if chromium_path and chromedriver_path:
+                print(f"   [시도 {attempt+1}/{max_retries}] Chromium: {chromium_path}")
+                service = Service(chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=options)
+                print(f"✅ Replit Chromium 사용 성공 (시도 {attempt+1}/{max_retries})")
+                return driver
+            else:
+                driver = webdriver.Chrome(options=options)
+                print(f"✅ ChromeDriver 사용 성공 (시도 {attempt+1}/{max_retries})")
+                return driver
+        except Exception as e:
+            print(f"⚠️ ChromeDriver 시작 실패 ({attempt+1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)
+                continue
+            else:
+                print(f"❌ ChromeDriver 초기화 최종 실패: {e}")
+                return None
+    return None
 
 def login_to_newstown(driver, wait):
     """뉴스타운에 로그인하는 함수"""

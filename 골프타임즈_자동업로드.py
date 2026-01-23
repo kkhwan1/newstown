@@ -41,8 +41,8 @@ class GolfTimesUploader:
         self.headless = headless
         self.wait = None
 
-    def get_driver(self):
-        """ChromeDriver 초기화 및 실행"""
+    def get_driver(self, max_retries=3):
+        """ChromeDriver 초기화 및 실행 (재시도 포함)"""
         options = webdriver.ChromeOptions()
 
         if self.headless:
@@ -53,24 +53,33 @@ class GolfTimesUploader:
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--single-process")
 
         try:
-            try:
-                import shutil
-                chromium_path = shutil.which('chromium')
-                if chromium_path:
-                    options.binary_location = chromium_path
-            except:
-                pass
+            import shutil
+            chromium_path = shutil.which('chromium')
+            if chromium_path:
+                options.binary_location = chromium_path
+        except:
+            pass
 
-            self.driver = webdriver.Chrome(options=options)
-            self.wait = WebDriverWait(self.driver, 10)
-            print("✅ [골프타임즈] ChromeDriver 실행 성공")
-            return self.driver
-        except Exception as e:
-            print(f"❌ [골프타임즈] ChromeDriver 실행 실패: {e}")
-            traceback.print_exc()
-            return None
+        for attempt in range(max_retries):
+            try:
+                self.driver = webdriver.Chrome(options=options)
+                self.wait = WebDriverWait(self.driver, 10)
+                print(f"✅ [골프타임즈] ChromeDriver 실행 성공 (시도 {attempt+1}/{max_retries})")
+                return self.driver
+            except Exception as e:
+                print(f"⚠️ [골프타임즈] ChromeDriver 시작 실패 ({attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+                else:
+                    print(f"❌ [골프타임즈] ChromeDriver 실행 실패: {e}")
+                    traceback.print_exc()
+                    return None
+        return None
 
     def login(self):
         """골프타임즈 로그인"""
