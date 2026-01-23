@@ -79,8 +79,7 @@ class GolfTimesUploader:
             self.driver.get(GOLFTIMES_LOGIN_URL)
 
             id_input = self.wait.until(
-                EC.presence_of_element_located((By.NAME, "user_id"))
-            )
+                EC.presence_of_element_located((By.NAME, "user_id")))
             id_input.clear()
             id_input.send_keys(GOLFTIMES_ID)
             print("[골프타임즈] 아이디 입력 완료")
@@ -90,7 +89,8 @@ class GolfTimesUploader:
             pw_input.send_keys(GOLFTIMES_PW)
             print("[골프타임즈] 비밀번호 입력 완료")
 
-            login_btn = self.driver.find_element(By.CSS_SELECTOR, ".login_submit")
+            login_btn = self.driver.find_element(By.CSS_SELECTOR,
+                                                 ".login_submit")
             login_btn.click()
             print("[골프타임즈] 로그인 버튼 클릭")
 
@@ -120,16 +120,14 @@ class GolfTimesUploader:
 
             print("[골프타임즈] 1차 섹션 선택 (문화)...")
             section1_select = Select(
-                self.driver.find_element(By.NAME, "sectionCode")
-            )
+                self.driver.find_element(By.NAME, "sectionCode"))
             section1_select.select_by_value(SECTION_1ST)
 
             time.sleep(1)
 
             print("[골프타임즈] 2차 섹션 선택 (핫이슈)...")
             section2_select = Select(
-                self.driver.find_element(By.NAME, "subSectionCode")
-            )
+                self.driver.find_element(By.NAME, "subSectionCode"))
             section2_select.select_by_value(SECTION_2ND)
 
             print(f"[골프타임즈] 제목 입력: {title[:30]}...")
@@ -138,12 +136,15 @@ class GolfTimesUploader:
             title_input.send_keys(title)
 
             print("[골프타임즈] 본문 입력 (CKEditor)...")
-            html_content = content.replace("`", "\\`").replace("$", "\\$").replace("\n", "<br>")
+            html_content = content.replace("`",
+                                           "\\`").replace("$", "\\$").replace(
+                                               "\n", "<br>")
             js_script = f"CKEDITOR.instances['FCKeditor1'].setData('<p>{html_content}</p>');"
             self.driver.execute_script(js_script)
 
             print("[골프타임즈] 등록 버튼 클릭...")
-            submit_btn = self.driver.find_element(By.CSS_SELECTOR, "a[href*='newsWriteFormSubmit']")
+            submit_btn = self.driver.find_element(
+                By.CSS_SELECTOR, "a[href*='newsWriteFormSubmit']")
             submit_btn.click()
 
             time.sleep(3)
