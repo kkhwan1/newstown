@@ -60,7 +60,7 @@ app = FastAPI(
 )
 
 # CORS Middleware
-# Allow Streamlit dashboard (localhost:8501) and development origins
+# Default development origins + optional CORS_ORIGINS env var (comma-separated)
 origins = [
     "http://localhost:8501",
     "http://127.0.0.1:8501",
@@ -69,6 +69,9 @@ origins = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]
+extra_origins = os.getenv("CORS_ORIGINS", "")
+if extra_origins:
+    origins.extend([o.strip() for o in extra_origins.split(",") if o.strip()])
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,7 +99,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' data:; "
-            "connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* https://localhost:*; "
+            "connect-src 'self' ws: wss: http://localhost:* https://localhost:*; "
             "frame-ancestors 'self'; "
             "base-uri 'self'; "
             "form-action 'self';"
