@@ -19,13 +19,13 @@ def main():
     # 1. Create config/users.json if missing
     users_file = config_dir / "users.json"
     if not users_file.exists():
-        default_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode("utf-8")
+        admin_hash = bcrypt.hashpw(b"admin17730", bcrypt.gensalt()).decode("utf-8")
         users_data = {
             "users": {
-                "admin": {
+                "admin123": {
                     "id": 1,
-                    "username": "admin",
-                    "password_hash": default_hash,
+                    "username": "admin123",
+                    "password_hash": admin_hash,
                     "role": "admin",
                     "created_at": "2026-02-26T00:00:00"
                 }
@@ -34,8 +34,7 @@ def main():
         }
         with open(users_file, "w", encoding="utf-8") as f:
             json.dump(users_data, f, ensure_ascii=False, indent=2)
-        print(f"Created {users_file} (default: admin/admin)")
-        print("WARNING: Change default password after first login!")
+        print(f"Created {users_file} (default: admin123)")
     else:
         print(f"{users_file} already exists, skipping")
 
