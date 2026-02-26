@@ -68,10 +68,41 @@ def load_config():
     """환경 변수에서 설정 로드"""
     config_str = os.environ.get('PROCESS_CONFIG', '{}')
     try:
-        return json.loads(config_str)
+        config = json.loads(config_str)
     except json.JSONDecodeError:
         log("설정 파싱 실패, 기본값 사용", "WARN")
-        return {}
+        config = {}
+
+    # ***MASKED*** 감지 시 ConfigManager에서 실제 값 재로드
+    masked = '***MASKED***'
+    naver_id = config.get('naver_client_id', '')
+    naver_secret = config.get('naver_client_secret', '')
+    sheet_url = config.get('sheet_url', '')
+
+    if naver_id == masked or naver_secret == masked or not naver_id or not naver_secret:
+        try:
+            from utils.config_manager import get_config_manager
+            cm = get_config_manager()
+            naver_cfg = cm.get('naver_api')
+            if naver_cfg:
+                config['naver_client_id'] = naver_cfg.get('client_id', '')
+                config['naver_client_secret'] = naver_cfg.get('client_secret', '')
+                log("네이버 API 키를 ConfigManager에서 로드함", "SUCCESS")
+        except Exception as e:
+            log(f"네이버 API 키 로드 실패: {e}", "ERROR")
+
+    if not sheet_url or sheet_url == masked:
+        try:
+            from utils.config_manager import get_config_manager
+            cm = get_config_manager()
+            sheet_cfg = cm.get('google_sheet')
+            if sheet_cfg:
+                config['sheet_url'] = sheet_cfg.get('url', '')
+                log("Sheet URL을 ConfigManager에서 로드함", "SUCCESS")
+        except Exception as e:
+            log(f"Sheet URL 로드 실패: {e}", "ERROR")
+
+    return config
 
 
 def create_collector_config(config):

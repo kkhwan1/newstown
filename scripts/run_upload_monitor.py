@@ -115,8 +115,14 @@ def run_monitor(config):
         credential_sections.add(cred_section)
 
     # Load credentials from ConfigManager for each credential section
+    # Also reload if section contains ***MASKED*** values (from frontend API masking)
     for section in credential_sections:
-        if section not in config or not config.get(section):
+        section_data = config.get(section)
+        needs_reload = (
+            not section_data or
+            any(v == '***MASKED***' for v in (section_data.values() if isinstance(section_data, dict) else []))
+        )
+        if needs_reload:
             try:
                 from utils.config_manager import get_config_manager
                 cm = get_config_manager()
@@ -318,7 +324,6 @@ def run_monitor(config):
                                     break
 
                                 try:
-                                    # submit=True to actually publish the article
                                     result = uploader.upload(title, content, submit=True)
                                     if result.success:
                                         success_count += 1

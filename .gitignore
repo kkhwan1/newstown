@@ -3,6 +3,7 @@
 
 # Google Service Account 키
 credentials.json
+swift-radar-*.json
 
 # Python
 __pycache__/

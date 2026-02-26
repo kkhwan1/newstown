@@ -713,14 +713,17 @@ const DashboardHandler = {
                     console.log('[DEBUG] Upload config:', { selected, platformsKeys: Object.keys(platforms), sheet_url: !!config.sheet_url });
                     await API.startProcess('upload_monitor', config);
                 } else if (process === 'deletion') {
-                    const config = await API.getConfig('row_deletion');
+                    const fullDelConfig = await API.getConfig();
+                    const config = { ...(fullDelConfig.row_deletion || {}) };
+                    config.sheet_url = fullDelConfig.google_sheet?.url || '';
                     await API.startProcess('row_deletion', config);
                 } else if (process === 'news') {
-                    const config = await API.getConfig('news_collection');
-                    const categoryKeywords = await API.getConfig('category_keywords');
-                    if (categoryKeywords) {
-                        config.category_keywords = categoryKeywords;
-                    }
+                    const fullConfig = await API.getConfig();
+                    const config = { ...(fullConfig.news_collection || {}) };
+                    config.sheet_url = fullConfig.google_sheet?.url || '';
+                    config.naver_client_id = fullConfig.naver_api?.client_id || '';
+                    config.naver_client_secret = fullConfig.naver_api?.client_secret || '';
+                    config.category_keywords = fullConfig.category_keywords || {};
                     await API.startProcess('news_collection', config);
                 }
                 Utils.showToast(`${process}가 시작되었습니다`, 'success');
