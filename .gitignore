@@ -65,5 +65,28 @@ config/api_usage.json
 # Replit development assets
 attached_assets/
 
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
 # Local state
 .local/
+.config/
+
+# Logs directory
+logs/
+
+# Windows artifacts
+nul
+
+# Sensitive config files
+config/users.json
+
+# Tests (development only)
+tests/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.cover

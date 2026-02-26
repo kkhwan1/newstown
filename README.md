@@ -1,6 +1,6 @@
 # 뉴스 자동화 시스템
 
-네이버 뉴스를 수집하여 구글 시트에 저장하고, 뉴스타운에 자동으로 업로드하는 시스템입니다.
+네이버 뉴스를 수집하여 구글 시트에 저장하고, 골프타임즈에 자동으로 업로드하는 시스템입니다.
 
 ## 새 컴퓨터 설치 가이드
 
@@ -69,9 +69,9 @@ cp .env.example .env
 # Google Sheets URL
 GOOGLE_SHEET_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
 
-# 뉴스타운 로그인 정보
-NEWSTOWN_ID=your_id
-NEWSTOWN_PW=your_password
+# 골프타임즈 로그인 정보
+GOLFTIMES_ID=your_id
+GOLFTIMES_PW=your_password
 
 # 네이버 API
 NAVER_CLIENT_ID=your_client_id
@@ -115,7 +115,7 @@ python naver_to_sheet.py
 python 뉴스타운_자동업로드_감시.py
 
 # 완료행 삭제
-python 뉴스타운_완료행_삭제.py
+python 완료행_삭제.py
 ```
 
 ### Flask 서버 (Make.com 연동)
@@ -137,7 +137,7 @@ python ngrok_간단실행.py
 ├── dashboard.py              # Streamlit 대시보드 (메인 GUI)
 ├── naver_to_sheet.py         # 뉴스 수집 스크립트
 ├── 뉴스타운_자동업로드_감시.py  # 업로드 감시 스크립트
-├── 뉴스타운_완료행_삭제.py     # 완료행 삭제 스크립트
+├── 완료행_삭제.py             # 완료행 삭제 스크립트
 ├── 서버용_업로드.py           # Flask 웹서버
 ├── ngrok_간단실행.py          # ngrok 터널
 ├── .env                      # 환경 변수 (민감 정보, git 제외)
@@ -169,7 +169,7 @@ python ngrok_간단실행.py
 | E | AI_제목 | Make.com에서 생성 |
 | F | AI_본문 | Make.com에서 생성 |
 | G | 체크박스 | (사용 안 함) |
-| H | 상태 | 완료/실패 표시 |
+| H | 상태 | 골프타임즈 완료/실패 표시 |
 
 ---
 
@@ -223,7 +223,7 @@ Address already in use
 2. **중복 방지**: 링크 + 제목 유사도로 중복 체크
 3. **특정 인물 필터링**: 같은 인물 관련 뉴스는 최대 3개로 제한
 4. **자동 카테고리 분류**: Core/General 키워드 기반 분류
-5. **카테고리별 섹션 선택**: D열 값에 따라 뉴스타운 2차 섹션 자동 선택
+5. **카테고리별 섹션 선택**: D열 값에 따라 플랫폼 2차 섹션 자동 선택
 6. **GUI 대시보드**: 모든 기능을 웹 인터페이스로 제어
 
 ---
@@ -249,8 +249,8 @@ Address already in use
 | 변수명 | 설명 | 필수 |
 |--------|------|------|
 | `GOOGLE_SHEET_URL` | 구글 시트 URL | O |
-| `NEWSTOWN_ID` | 뉴스타운 아이디 | O |
-| `NEWSTOWN_PW` | 뉴스타운 비밀번호 | O |
+| `GOLFTIMES_ID` | 골프타임즈 아이디 | O |
+| `GOLFTIMES_PW` | 골프타임즈 비밀번호 | O |
 | `NAVER_CLIENT_ID` | 네이버 API Client ID | O |
 | `NAVER_CLIENT_SECRET` | 네이버 API Client Secret | O |
 | `NEWS_DISPLAY_COUNT` | 뉴스 수집 개수 (기본: 30) | - |

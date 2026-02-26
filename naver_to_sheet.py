@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# @TASK P0-T0.2 - 뉴스 수집기 설정 클래스 리팩토링
+# @SPEC docs/planning/
 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -7,6 +9,7 @@ import urllib.parse
 import json
 import time
 import sys
+import os
 import io
 import requests
 from bs4 import BeautifulSoup
@@ -23,58 +26,399 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
-# Windows 콘솔에서 UTF-8 인코딩 설정
+# Windows 콘솔에서 UTF-8 인코딩 설정 (stdout이 유효한 경우만)
+# 이미 TextIOWrapper로 설정된 경우 건너뛰기 (중복 래핑 방지)
 if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    # stdout이 이미 TextIOWrapper인지 확인
+    _is_stdout_wrapped = isinstance(sys.stdout, io.TextIOWrapper) and hasattr(sys.stdout, 'buffer')
+    _is_stderr_wrapped = isinstance(sys.stderr, io.TextIOWrapper) and hasattr(sys.stderr, 'buffer')
+
+    if not _is_stdout_wrapped and hasattr(sys.stdout, 'buffer') and not sys.stdout.closed:
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        except (ValueError, OSError):
+            pass
+    if not _is_stderr_wrapped and hasattr(sys.stderr, 'buffer') and not sys.stderr.closed:
+        try:
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except (ValueError, OSError):
+            pass
 
 # 프로젝트 루트 디렉토리 (스크립트 위치 기준)
 PROJECT_ROOT = Path(__file__).parent
 CREDENTIALS_PATH = PROJECT_ROOT / 'credentials.json'
 DASHBOARD_CONFIG_PATH = PROJECT_ROOT / 'config' / 'dashboard_config.json'
 
-# ==========================================
-# [CONFIG] 설정 구역
-# ==========================================
-# 1. 네이버 API 설정
-NAVER_CLIENT_ID = "hj620p2ZnD94LNjNaW8d"
-NAVER_CLIENT_SECRET = "sDRT5fUUaK"
 
-# 2. 구글 시트 설정
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit"
+# ==========================================
+# [CONFIG] 설정 클래스
+# ==========================================
+@dataclass
+class NewsCollectorConfig:
+    """뉴스 수집기 설정
 
-# 3. 대시보드 설정에서 키워드 로드 함수
-def load_keywords_from_dashboard():
-    """대시보드 설정 파일에서 category_keywords의 core 키워드를 로드하여 
-    KEYWORDS와 KEYWORD_CATEGORY_MAP을 동적으로 생성"""
-    keywords = {}
-    keyword_category_map = {}
-    
+    글로벌 변수 변이를 방지하기 위해 설정을 캡슐화합니다.
+    """
+    # 네이버 API 설정
+    naver_client_id: str
+    naver_client_secret: str
+
+    # 구글 시트 설정
+    sheet_url: str
+
+    # 카테고리별 수집 제한 (실제 저장할 개수)
+    category_limits: Dict[str, int] = field(default_factory=lambda: {
+        "연애": 15,
+        "경제": 15,
+        "스포츠": 15
+    })
+
+    # 검색 키워드 (키워드별 검색 개수)
+    keywords: Dict[str, int] = field(default_factory=dict)
+
+    # 키워드-카테고리 매핑
+    keyword_category_map: Dict[str, str] = field(default_factory=dict)
+
+    # 카테고리별 확장 키워드 (필터링용)
+    category_keywords: Dict[str, Dict] = field(default_factory=dict)
+
+    # 표시 개수
+    display_count: int = 70
+
+    # 정렬 옵션 ('sim': 인기순, 'date': 최신순)
+    sort: str = 'sim'
+
+    # 카테고리 필터 (None이면 모든 뉴스 수집 후 자동 분류)
+    category_filter: Optional[str] = None
+
+    # 카테고리 불일치 정책
+    skip_mismatched_category: bool = False
+
+    # 경제 카테고리 활성화
+    enable_economy_category: bool = True
+
+
+def get_default_category_keywords() -> Dict[str, Dict]:
+    """기본 카테고리 키워드 반환"""
+    return {
+        "연애": {
+            "core": ["연애", "열애", "열애설", "커플", "결혼", "이혼", "데이트", "로맨스",
+                     "사랑", "프로포즈", "청혼", "신혼", "재혼", "불륜", "바람", "이별",
+                     "재회", "소개팅", "맞선", "혼인", "부부", "연인", "애인", "결별",
+                     "파혼", "약혼", "동거", "외도", "썸", "짝사랑", "애정",
+                     "로맨틱", "구혼", "혼례", "결혼식", "신혼부부", "신혼살림"],
+            "general": ["신랑", "신부", "웨딩", "혼수", "신혼여행", "교제", "연하남",
+                        "연상녀", "돌싱", "미혼", "기혼", "솔로", "커플룩", "커플링",
+                        "기념일", "발렌타인", "화이트데이", "연애상담", "권태기", "이상형",
+                        "소개", "만남", "교제", "사귀", "헤어", "화해", "재결합"],
+            "exclude": [
+                "연애 시뮬레이션", "연애게임", "연애 게임", "게임 출시",
+                "드라마", "영화", "웹툰", "소설", "작품", "출연", "캐스팅",
+                "방송", "예능", "촬영", "시청률", "제작", "연기", "경기",
+                "선수", "팀", "구단", "야구", "축구", "스포츠", "경제", "주식",
+                "금리", "부동산", "기업", "매출", "실적",
+                "호텔", "리조트", "숙박", "객실", "투숙", "아이스링크",
+                "스키장", "워터파크", "놀이공원", "테마파크", "미디어아트",
+                "전시", "박물관", "갤러리", "축제", "행사", "마켓", "팝업",
+                "레저", "관광", "여행지", "명소", "정치", "선거", "국회",
+                "금산분리", "언산분리", "화장실", "일터", "평등", "노동",
+                "스타트업", "적외선", "AI", "인공지능", "모니터링", "센서",
+                "로스쿨", "법대", "소년범", "소년법", "재판", "범죄", "판결",
+                "기저귀", "요실금", "건강", "병원", "의료", "질환", "증상",
+                "CEO", "창업자", "투자유치", "시리즈A", "시리즈B", "VC",
+                "국회의원", "국비", "예산", "지자체", "지방자치", "행정",
+                "복면가왕", "음악가왕", "가왕", "무대", "음악 방송", "가요대전",
+                "음악중심", "인기가요", "뮤직뱅크", "쇼챔피언", "더쇼",
+                "엠카운트다운", "음악 프로그램", "라이브", "립싱크", "무반주",
+                "알츠하이머", "치매", "암", "수술", "입원", "퇴원", "진료",
+                "환자", "의사", "간호사", "요양", "요양원", "재활", "치료",
+                "골절", "폭행", "폭력", "학대", "가정폭력", "성폭력", "상해",
+                "워케이션", "플랫폼", "서비스 출시", "앱 출시", "론칭",
+                "크리에이터", "유튜버", "인플루언서", "콘텐츠", "채널",
+                "관광청", "관광청장", "관광객", "여행사", "투어", "명소",
+                "군도", "휴양지", "리조트", "호텔", "객실", "투숙객",
+                "가족센터", "복지관", "복지센터", "주민센터", "사회복지",
+                "수상", "시상", "우수 사례", "공모전", "심사", "선정",
+                "사기", "사기꾼", "사짜", "피해자", "피해", "경찰", "검찰",
+                "수사", "고소", "고발", "형사", "민사", "소송",
+                "종영", "첫방", "본방", "재방", "줄거리", "결말", "등장인물",
+                "캐릭터", "극중", "시즌", "에피소드", "회차", "막장",
+                "의식 회복", "혼수상태", "병상", "간병", "임종"
+            ]
+        },
+        "경제": {
+            "core": ["경제", "금리", "주식", "부동산", "인플레이션", "물가", "환율",
+                     "증시", "코스피", "코스닥", "나스닥", "GDP", "경기침체", "불황",
+                     "금융위기", "기준금리", "금리인상", "금리인하", "실적발표", "어닝쇼크",
+                     "경제성장", "경제지표", "경제정책", "통화정책", "재정정책"],
+            "general": ["은행", "금융", "증권", "보험", "펀드", "채권", "투자", "자산",
+                        "배당", "시가총액", "IPO", "상장", "ETF", "비트코인", "암호화폐",
+                        "기업", "매출", "영업이익", "순이익", "실적", "CEO", "인수합병",
+                        "연봉", "최저임금", "고용", "실업", "세금", "수출", "수입",
+                        "반도체", "자동차", "스타트업", "벤처", "분기실적", "연간실적",
+                        "매출액", "영업손실", "적자", "흑자", "주가", "시총", "공모가",
+                        "상장폐지", "유상증자", "무상증자", "액면분할", "경영", "사업",
+                        "산업", "시장", "거래", "매매", "계약", "계약금", "계약서"],
+            "exclude": ["야구 경제학", "축구 경제학", "스포츠 경제학", "게임 경제",
+                       "경기장", "구장", "야구장", "축구장", "경기 결과", "경기 일정",
+                       "선수", "감독", "코치", "팀", "구단", "이적료", "계약금", "연봉",
+                       "야구", "축구", "농구", "배구", "골프", "테니스", "올림픽", "월드컵",
+                       "KBO", "K리그", "프로야구", "프로축구", "MLB", "NBA", "NFL", "EPL",
+                       "득점", "골", "홈런", "안타", "승리", "패배", "우승", "MVP"]
+        },
+        "스포츠": {
+            "core": ["야구", "축구", "농구", "배구", "골프", "테니스",
+                     "올림픽", "월드컵", "KBO", "K리그", "프로야구", "프로축구",
+                     "MLB", "NBA", "NFL", "EPL", "프리미어리그", "경기장", "구장",
+                     "야구장", "축구장", "농구장", "배구장", "경기 결과", "경기 일정",
+                     "경기 스코어", "경기 하이라이트", "경기 중계", "경기 요약"],
+            "general": ["선수", "감독", "코치", "구단", "팀", "이적", "영입", "FA",
+                        "경기", "시합", "대회", "우승", "패배", "승리", "득점", "골",
+                        "홈런", "안타", "MVP", "올스타", "수영", "육상", "격투기",
+                        "UFC", "라운드", "세트", "이닝",
+                        "라인업", "벤치", "교체", "퇴장", "경고", "퇴장", "득점왕",
+                        "타율", "방어율", "승률", "득점", "실점", "승점", "리그",
+                        "챔피언십", "플레이오프", "준결승", "결승", "우승컵", "트로피"],
+            "teams": ["삼성 라이온즈", "두산 베어스", "LG 트윈스", "롯데 자이언츠",
+                      "KIA 타이거즈", "SSG 랜더스", "키움 히어로즈", "NC 다이노스",
+                      "KT 위즈", "한화 이글스", "삼성", "두산", "롯데", "KIA", "SSG",
+                      "키움", "NC", "KT", "한화", "토트넘", "맨유", "맨시티", "첼시",
+                      "리버풀", "아스날", "바르셀로나", "레알 마드리드", "바이에른",
+                      "기아", "현대", "SK", "LG", "두산", "롯데", "NC", "KT", "한화"],
+            "famous_players": ["손흥민", "이강인", "김민재", "황희찬", "류현진",
+                               "류현진", "오승환", "김광현", "구본무", "이정후",
+                               "추신수", "박찬호", "박용택", "이승엽", "김태균",
+                               "이대호", "양준혁", "장종훈", "최정", "이종범",
+                               "김봉연", "심수창", "마해영", "정근우", "최지만",
+                               "하주석", "박세혁", "강백호", "문보경", "노시환",
+                               "도슨", "전준우", "한유섬", "로맥", "오지환",
+                               "양의지", "박동원", "하주석", "안권수", "김헌곤",
+                               "원태인", "나성범", "박건우", "김선빈", "최정",
+                               "제리 샌즈", "애런 윌커슨", "로비 하램", "케빈 크론",
+                               "윌커슨", "펠릭스 페냐", "아다 헤수스", "에디슨 러셀",
+                               "호세 피레라", "제이크 데이비스", "앤서니 알포드",
+                               "엔리케 로만", "번 힐리", "제이크 리어리", "DJ 피터스",
+                               "조 휠턴", "타일러 에플러", "캘 히긴스", "야스마니 토마스",
+                               "산타나", "맷 하비", "대릴 케네디", "벤 라이블리",
+                               "앤드류 수아레스", "트레버 루가", "앤드류 히니", "제이콥",
+                               "맷 무어", "크리스 벤크", "모스코소", "코헨", "제이슨",
+                               "닉 킹엄", "알버트 수아레즈", "조이 와이너", "맥스",
+                               "마이클 코펙", "미겔 카스트로", "조 조르겐슨", "리오 루비오",
+                               "마이클 로페즈", "조던 로마노", "켄리 잰슨", "아로ldis",
+                               "아로울디스 채프먼", "크레이그 킴브렐", "켄리 잰슨",
+                               "맷 반트", "브래드 핸드", "라이언 프레스리", "조시 해이든",
+                               "닐", "애덤 오타비노", "리엄 Hendriks", "앤드류 밀러",
+                               "잭 그레인키", "저스틴 벌랜더", "맥 슐러", "제이슨 베일리",
+                               "제이콥 디그롬", "워커 뷸러", "코튼", "맥크랙든"],
+            "exclude": []
+        }
+    }
+
+
+def load_config_from_dashboard() -> NewsCollectorConfig:
+    """대시보드 설정 파일에서 NewsCollectorConfig 생성"""
     try:
         if DASHBOARD_CONFIG_PATH.exists():
             with open(DASHBOARD_CONFIG_PATH, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            category_keywords = config.get('category_keywords', {})
-            
+                data = json.load(f)
+
+            # 키워드와 매핑 생성
+            keywords = {}
+            keyword_category_map = {}
+            category_keywords = data.get('category_keywords', {})
+
             for category, kw_data in category_keywords.items():
                 core_keywords = kw_data.get('core', [])
                 for kw in core_keywords:
                     keywords[kw] = 10
                     keyword_category_map[kw] = category
-            
-            print(f"[CONFIG] 대시보드에서 키워드 로드 완료: {len(keywords)}개")
-            for cat in category_keywords:
-                cat_count = len(category_keywords[cat].get('core', []))
-                print(f"   - {cat}: {cat_count}개 키워드")
+
+            # stdout이 유효한지 확인 후 출력 (subprocess 환경에서 오류 방지)
+            try:
+                print(f"[CONFIG] 대시보드에서 키워드 로드 완료: {len(keywords)}개")
+                for cat in category_keywords:
+                    cat_count = len(category_keywords[cat].get('core', []))
+                    print(f"   - {cat}: {cat_count}개 키워드")
+            except (ValueError, OSError):
+                pass  # stdout이 닫힌 경우 무시
+
+            return NewsCollectorConfig(
+                naver_client_id=data.get('naver_api', {}).get('client_id', ''),
+                naver_client_secret=data.get('naver_api', {}).get('client_secret', ''),
+                sheet_url=data.get('google_sheet', {}).get('url',
+                    "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit"),
+                category_limits=data.get('news_collection', {}).get('keywords', {
+                    "연애": 15,
+                    "경제": 15,
+                    "스포츠": 15
+                }),
+                keywords=keywords,
+                keyword_category_map=keyword_category_map,
+                category_keywords=category_keywords,
+                display_count=data.get('news_collection', {}).get('display_count', 70),
+                sort=data.get('news_collection', {}).get('sort', 'sim'),
+                category_filter=None,
+                skip_mismatched_category=False,
+                enable_economy_category=True
+            )
         else:
-            print(f"[WARN] 대시보드 설정 파일 없음: {DASHBOARD_CONFIG_PATH}")
+            try:
+                print(f"[WARN] 대시보드 설정 파일 없음: {DASHBOARD_CONFIG_PATH}")
+            except (ValueError, OSError):
+                pass
+            return get_default_config()
+    except Exception as e:
+        try:
+            print(f"[ERROR] 설정 로드 실패: {e}")
+        except (ValueError, OSError):
+            pass
+        return get_default_config()
+
+
+def get_default_config() -> NewsCollectorConfig:
+    """기본 설정 반환"""
+    keywords = {
+        "연애": 8, "연예": 8, "커플": 5, "결혼": 5,
+        "스포츠": 20, "야구": 10, "축구": 10,
+        "주식": 8, "경제": 5, "코스피": 4,
+    }
+    keyword_category_map = {
+        "연애": "연애", "연예": "연애", "커플": "연애", "결혼": "연애",
+        "스포츠": "스포츠", "야구": "스포츠", "축구": "스포츠",
+        "주식": "경제", "경제": "경제", "코스피": "경제",
+    }
+
+    return NewsCollectorConfig(
+        # @SECURITY A05 - 하드코딩된 API 키와 비밀번호 제거
+        naver_client_id="",
+        naver_client_secret="",
+        sheet_url="",
+        category_limits={"연애": 15, "경제": 15, "스포츠": 15},
+        keywords=keywords,
+        keyword_category_map=keyword_category_map,
+        category_keywords=get_default_category_keywords(),
+        display_count=70,
+        sort='sim',
+        category_filter=None,
+        skip_mismatched_category=False,
+        enable_economy_category=True
+    )
+
+
+# ==========================================
+# [CONFIG] 설정 구역 (레거시 호환성)
+# ==========================================
+# @SECURITY A05 - 하드코딩된 API 키와 비밀번호 제거
+# 1. 네이버 API 설정 (레거시, 환경 변수 또는 대시보드에서 설정)
+NAVER_CLIENT_ID = ""
+NAVER_CLIENT_SECRET = ""
+
+# 2. 구글 시트 설정 (레거시)
+SHEET_URL = ""
+
+# 3. 대시보드 설정에서 키워드 로드 함수 (레거시 호환성)
+def load_keywords_from_dashboard():
+    """대시보드 설정 파일에서 category_keywords의 core 키워드를 로드하여
+    KEYWORDS와 KEYWORD_CATEGORY_MAP을 동적으로 생성"""
+    config = load_config_from_dashboard()
+    return config.keywords, config.keyword_category_map
+
+
+def get_default_keywords():
+    """기본 키워드 (설정 파일 없을 때 fallback)"""
+    keywords = {
+        "연애": 8, "연예": 8, "커플": 5, "결혼": 5,
+        "스포츠": 20, "야구": 10, "축구": 10,
+        "주식": 8, "경제": 5, "코스피": 4,
+    }
+    keyword_category_map = {
+        "연애": "연애", "연예": "연애", "커플": "연애", "결혼": "연애",
+        "스포츠": "스포츠", "야구": "스포츠", "축구": "스포츠",
+        "주식": "경제", "경제": "경제", "코스피": "경제",
+    }
+    return keywords, keyword_category_map
+
+
+# 대시보드에서 키워드 로드 (실행 시 동적 로드)
+KEYWORDS, KEYWORD_CATEGORY_MAP = load_keywords_from_dashboard()
+
+
+# 4. 검색 옵션 (레거시)
+DISPLAY_COUNT = 70
+
+# 5. 카테고리 필터 설정 (레거시)
+CATEGORY = None
+
+# 6. 카테고리 불일치 정책 (레거시)
+SKIP_MISMATCHED_CATEGORY = False
+
+# 8. 경제 카테고리 활성화 (레거시)
+ENABLE_ECONOMY_CATEGORY = True
+
+# 9. 정렬 옵션 (레거시)
+SORT_OPTION = 'sim'
+
+# 10. 카테고리별 수집 제한 (레거시)
+CATEGORY_LIMITS = {
+    "연애": 15,
+    "경제": 15,
+    "스포츠": 15
+}
+
+# ==========================================
+# [CONFIG] 설정 구역
+# ==========================================
+# 1. 네이버 API 설정 - .env에서 우선 읽기, 없으면 기본값 사용
+NAVER_CLIENT_ID = os.environ.get('NAVER_CLIENT_ID', '')
+NAVER_CLIENT_SECRET = os.environ.get('NAVER_CLIENT_SECRET', '')
+
+# 2. 구글 시트 설정
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1H0aj-bN63LMMFcinfe51J-gwewzxIyzFOkqSA5POHkk/edit"
+
+# 3. 대시보드 설정에서 키워드 로드 함수 (레거시 호환성)
+def load_keywords_from_dashboard():
+    """대시보드 설정 파일에서 category_keywords의 core 키워드를 로드하여
+    KEYWORDS와 KEYWORD_CATEGORY_MAP을 동적으로 생성"""
+    keywords = {}
+    keyword_category_map = {}
+
+    try:
+        if DASHBOARD_CONFIG_PATH.exists():
+            with open(DASHBOARD_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            category_keywords = config.get('category_keywords', {})
+
+            for category, kw_data in category_keywords.items():
+                core_keywords = kw_data.get('core', [])
+                for kw in core_keywords:
+                    keywords[kw] = 10
+                    keyword_category_map[kw] = category
+
+            # stdout이 유효한지 확인 후 출력 (subprocess 환경에서 오류 방지)
+            try:
+                print(f"[CONFIG] 대시보드에서 키워드 로드 완료: {len(keywords)}개")
+                for cat in category_keywords:
+                    cat_count = len(category_keywords[cat].get('core', []))
+                    print(f"   - {cat}: {cat_count}개 키워드")
+            except (ValueError, OSError):
+                pass
+        else:
+            try:
+                print(f"[WARN] 대시보드 설정 파일 없음: {DASHBOARD_CONFIG_PATH}")
+            except (ValueError, OSError):
+                pass
             keywords, keyword_category_map = get_default_keywords()
     except Exception as e:
-        print(f"[ERROR] 키워드 로드 실패: {e}")
+        try:
+            print(f"[ERROR] 키워드 로드 실패: {e}")
+        except (ValueError, OSError):
+            pass
         keywords, keyword_category_map = get_default_keywords()
-    
+
     return keywords, keyword_category_map
 
 def get_default_keywords():
@@ -103,12 +447,7 @@ DISPLAY_COUNT = 70  # 총 70개 (연애 30개, 스포츠 40개)
 # 5. 카테고리 필터 설정 (None이면 모든 뉴스 수집 후 자동 분류)
 CATEGORY = None  # "연애", "경제", "스포츠" 등 (None이면 필터링 안 함)
 
-# 6. 뉴스타운 업로드 설정
-SITE_ID = "kim123"
-SITE_PW = "love1105()"
-AUTO_UPLOAD_TO_NEWSTOWN = False  # False면 구글 시트에만 저장 (뉴스타운 업로드 안 함)
-
-# 7. 카테고리 불일치 정책
+# 6. 카테고리 불일치 정책
 SKIP_MISMATCHED_CATEGORY = False  # False: 카테고리 불일치 시에도 검색 키워드 기반 카테고리로 저장
                                   # False: 경고만 출력하고 저장 (기존 동작)
 
@@ -141,7 +480,7 @@ def load_api_usage():
                 if data.get('date') != today:
                     return {'date': today, 'calls': 0, 'news_count': 0}
                 return data
-    except:
+    except Exception:
         pass
     return {'date': datetime.now().strftime('%Y-%m-%d'), 'calls': 0, 'news_count': 0}
 
@@ -151,7 +490,7 @@ def save_api_usage(data):
         API_USAGE_FILE.parent.mkdir(exist_ok=True)
         with open(API_USAGE_FILE, 'w') as f:
             json.dump(data, f)
-    except:
+    except Exception:
         pass
 
 def increment_api_call(news_count=0):
@@ -177,21 +516,26 @@ def get_api_usage_info():
         'usage_percent': round((calls / daily_limit) * 100, 1) if daily_limit > 0 else 0
     }
 
-def get_naver_news(keyword, display=20, sort='date'):
+def get_naver_news(keyword, display=20, sort='date', config: Optional[NewsCollectorConfig] = None):
     """네이버 뉴스 검색 함수
-    
+
     Args:
         keyword: 검색어
         display: 가져올 개수
         sort: 정렬 방식 ('date'=최신순, 'sim'=정확도순/검색량 높은 순)
+        config: NewsCollectorConfig (선택적, 없으면 레거시 글로벌 변수 사용)
     """
+    # config가 있으면 config 값 사용, 없으면 레거시 글로벌 변수 사용
+    client_id = config.naver_client_id if config else NAVER_CLIENT_ID
+    client_secret = config.naver_client_secret if config else NAVER_CLIENT_SECRET
+
     encText = urllib.parse.quote(keyword)
     # 검색어, 출력 개수(display=10~100), 정렬(sim=정확도순/검색량 높은 순, date=날짜순/최신순)
     url = f"https://openapi.naver.com/v1/search/news?query={encText}&display={display}&sort={sort}"
-    
+
     request = urllib.request.Request(url)
-    request.add_header("X-Naver-Client-Id", NAVER_CLIENT_ID)
-    request.add_header("X-Naver-Client-Secret", NAVER_CLIENT_SECRET)
+    request.add_header("X-Naver-Client-Id", client_id)
+    request.add_header("X-Naver-Client-Secret", client_secret)
     
     try:
         response = urllib.request.urlopen(request)
@@ -752,148 +1096,8 @@ def scrape_news_content(url):
         print(f"   [WARN] 스크래핑 오류: {e}")
         return None
 
-# 카테고리별 확장된 키워드 딕셔너리 (전역 변수로 정의)
-CATEGORY_KEYWORDS = {
-    "연애": {
-        "core": ["연애", "열애", "열애설", "커플", "결혼", "이혼", "데이트", "로맨스",
-                 "사랑", "프로포즈", "청혼", "신혼", "재혼", "불륜", "바람", "이별",
-                 "재회", "소개팅", "맞선", "혼인", "부부", "연인", "애인", "결별",
-                 "파혼", "약혼", "동거", "외도", "썸", "짝사랑", "애정",
-                 "로맨틱", "구혼", "혼례", "결혼식", "신혼부부", "신혼살림"],
-        "general": ["신랑", "신부", "웨딩", "혼수", "신혼여행", "교제", "연하남",
-                    "연상녀", "돌싱", "미혼", "기혼", "솔로", "커플룩", "커플링",
-                    "기념일", "발렌타인", "화이트데이", "연애상담", "권태기", "이상형",
-                    "소개", "만남", "교제", "사귀", "헤어", "화해", "재결합"],
-        "exclude": [
-            # 기존 제외 키워드
-            "연애 시뮬레이션", "연애게임", "연애 게임", "게임 출시",
-            "드라마", "영화", "웹툰", "소설", "작품", "출연", "캐스팅",
-            "방송", "예능", "촬영", "시청률", "제작", "연기", "경기",
-            "선수", "팀", "구단", "야구", "축구", "스포츠", "경제", "주식",
-            "금리", "부동산", "기업", "매출", "실적",
-            "호텔", "리조트", "숙박", "객실", "투숙", "아이스링크",
-            "스키장", "워터파크", "놀이공원", "테마파크", "미디어아트",
-            "전시", "박물관", "갤러리", "축제", "행사", "마켓", "팝업",
-            "레저", "관광", "여행지", "명소", "정치", "선거", "국회",
-            "금산분리", "언산분리", "화장실", "일터", "평등", "노동",
-            "스타트업", "적외선", "AI", "인공지능", "모니터링", "센서",
-            "로스쿨", "법대", "소년범", "소년법", "재판", "범죄", "판결",
-            "기저귀", "요실금", "건강", "병원", "의료", "질환", "증상",
-            "CEO", "창업자", "투자유치", "시리즈A", "시리즈B", "VC",
-            "국회의원", "국비", "예산", "지자체", "지방자치", "행정",
-            # 연예 프로그램 관련 (연애와 혼동 방지)
-            "복면가왕", "음악가왕", "가왕", "무대", "음악 방송", "가요대전",
-            "음악중심", "인기가요", "뮤직뱅크", "쇼챔피언", "더쇼",
-            "엠카운트다운", "음악 프로그램", "라이브", "립싱크", "무반주",
-            # 건강/의료 관련
-            "알츠하이머", "치매", "암", "수술", "입원", "퇴원", "진료",
-            "환자", "의사", "간호사", "요양", "요양원", "재활", "치료",
-            "골절", "폭행", "폭력", "학대", "가정폭력", "성폭력", "상해",
-            # IT/비즈니스 관련
-            "워케이션", "플랫폼", "서비스 출시", "앱 출시", "론칭",
-            "크리에이터", "유튜버", "인플루언서", "콘텐츠", "채널",
-            # 관광/여행 관련
-            "관광청", "관광청장", "관광객", "여행사", "투어", "명소",
-            "군도", "휴양지", "리조트", "호텔", "객실", "투숙객",
-            # 사회/복지 관련
-            "가족센터", "복지관", "복지센터", "주민센터", "사회복지",
-            "수상", "시상", "우수 사례", "공모전", "심사", "선정",
-            # 사건/사고 관련
-            "사기", "사기꾼", "사짜", "피해자", "피해", "경찰", "검찰",
-            "수사", "고소", "고발", "형사", "민사", "소송",
-            # 기타 드라마/방송 관련
-            "종영", "첫방", "본방", "재방", "줄거리", "결말", "등장인물",
-            "캐릭터", "극중", "시즌", "에피소드", "회차", "막장",
-            "의식 회복", "혼수상태", "병상", "간병", "임종"
-        ]
-    },
-    "경제": {
-        "core": ["경제", "금리", "주식", "부동산", "인플레이션", "물가", "환율",
-                 "증시", "코스피", "코스닥", "나스닥", "GDP", "경기침체", "불황",
-                 "금융위기", "기준금리", "금리인상", "금리인하", "실적발표", "어닝쇼크",
-                 "경제성장", "경제지표", "경제정책", "통화정책", "재정정책"],
-        "general": ["은행", "금융", "증권", "보험", "펀드", "채권", "투자", "자산",
-                    "배당", "시가총액", "IPO", "상장", "ETF", "비트코인", "암호화폐",
-                    "기업", "매출", "영업이익", "순이익", "실적", "CEO", "인수합병",
-                    "연봉", "최저임금", "고용", "실업", "세금", "수출", "수입",
-                    "반도체", "자동차", "스타트업", "벤처", "분기실적", "연간실적",
-                    "매출액", "영업손실", "적자", "흑자", "주가", "시총", "공모가",
-                    "상장폐지", "유상증자", "무상증자", "액면분할", "경영", "사업",
-                    "산업", "시장", "거래", "매매", "계약", "계약금", "계약서"],
-        "exclude": ["야구 경제학", "축구 경제학", "스포츠 경제학", "게임 경제",
-                   "경기장", "구장", "야구장", "축구장", "경기 결과", "경기 일정",
-                   "선수", "감독", "코치", "팀", "구단", "이적료", "계약금", "연봉",
-                   "야구", "축구", "농구", "배구", "골프", "테니스", "올림픽", "월드컵",
-                   "KBO", "K리그", "프로야구", "프로축구", "MLB", "NBA", "NFL", "EPL",
-                   "득점", "골", "홈런", "안타", "승리", "패배", "우승", "MVP"]
-    },
-    "스포츠": {
-        "core": ["야구", "축구", "농구", "배구", "골프", "테니스",
-                 "올림픽", "월드컵", "KBO", "K리그", "프로야구", "프로축구",
-                 "MLB", "NBA", "NFL", "EPL", "프리미어리그", "경기장", "구장",
-                 "야구장", "축구장", "농구장", "배구장", "경기 결과", "경기 일정",
-                 "경기 스코어", "경기 하이라이트", "경기 중계", "경기 요약"],
-        "general": ["선수", "감독", "코치", "구단", "팀", "이적", "영입", "FA",
-                    "경기", "시합", "대회", "우승", "패배", "승리", "득점", "골",
-                    "홈런", "안타", "MVP", "올스타", "수영", "육상", "격투기",
-                    "UFC", "라운드", "세트", "이닝",
-                    "라인업", "벤치", "교체", "퇴장", "경고", "퇴장", "득점왕",
-                    "타율", "방어율", "승률", "득점", "실점", "승점", "리그",
-                    "챔피언십", "플레이오프", "준결승", "결승", "우승컵", "트로피"],
-        "teams": ["삼성 라이온즈", "두산 베어스", "LG 트윈스", "롯데 자이언츠",
-                  "KIA 타이거즈", "SSG 랜더스", "키움 히어로즈", "NC 다이노스",
-                  "KT 위즈", "한화 이글스", "삼성", "두산", "롯데", "KIA", "SSG",
-                  "키움", "NC", "KT", "한화", "토트넘", "맨유", "맨시티", "첼시",
-                  "리버풀", "아스날", "바르셀로나", "레알 마드리드", "바이에른",
-                  "기아", "현대", "SK", "LG", "두산", "롯데", "NC", "KT", "한화"],
-        "famous_players": ["손흥민", "이강인", "김민재", "황희찬", "류현진",
-                           "김하성", "이정후", "오타니", "박세리", "고진영",
-                           "박병호", "이정후", "강정호", "추신수", "최지만",
-                           "박찬호", "류현진", "추신수", "최지만", "김광현"],
-        "exclude": [
-            # 기존 제외 키워드
-            "스포츠카", "스포츠용품 매출", "스포츠웨어 주가",
-            "스포츠 브랜드 실적", "음악", "노래", "가수", "앨범", "음반",
-            "싱글", "차트", "플레이리스트", "스트리밍", "캐럴", "명곡",
-            "뮤직", "콘서트", "공연", "문화", "예술", "영화", "드라마",
-            "연예", "연예인", "배우", "아이돌", "K-pop", "에세이", "칼럼",
-            "뮤직카우", "발매", "시즌송", "주식", "금리", "부동산", "경제",
-            "증시", "코스피", "코스닥", "은행", "금융", "증권", "보험",
-            "매출", "영업이익", "실적", "기업", "CEO", "인수합병",
-            "코미디언", "개그맨", "개그우먼", "MC", "진행자", "방송인",
-            "예능", "버라이어티", "토크쇼", "놀라운 토요일", "나혼산",
-            "런닝맨", "무한도전", "매니저", "갑질", "하차", "녹화",
-            "소속사", "기획사", "연기", "출연", "촬영", "시청률",
-            "폭스바겐", "소비자원", "분쟁조정", "리콜", "결함", "불만",
-            "드론 시장", "드론 산업", "드론 기업", "무인기",
-            "수능", "수능점수", "지원가능", "대학입시", "입시", "학과",
-            "아트센터", "실내정원", "문화센터", "전시관", "공원",
-            "외국공관", "홍보", "브랜드홍보", "도시홍보", "관광홍보",
-            "국비", "예산", "국회의원", "정치", "정당", "선거", "지역구",
-            "대학교", "인재양성", "교육", "캠퍼스", "학교", "학생",
-            "샘플딜", "캡슐세제", "반려동물", "사료", "펫", "쇼핑",
-            "지자체", "지방자치", "행정", "시청", "군청", "구청",
-            # 여행/관광 관련 (스포츠와 무관)
-            "겨울여행", "여행지", "관광지", "명소", "산타마을", "분천",
-            "관광객", "여행 플랫폼", "여행사", "투어", "워케이션",
-            "휴양", "휴양지", "리조트", "숙박", "호텔", "펜션",
-            # 건강/의료 관련 (부상 뉴스 아닌 일반 건강)
-            "연골파열", "반월상", "관절", "무릎", "허리", "디스크",
-            "병원", "의료", "진료", "수술", "치료", "재활", "물리치료",
-            "건강관리", "건강검진", "예방", "증상", "질환",
-            # e스포츠/게임 관련 (일반 스포츠 분리)
-            "e스포츠", "이스포츠", "롤드컵", "LCK", "LPL", "롤", "리그오브레전드",
-            "T1", "젠지", "DRX", "한화생명", "KT롤스터", "DK", "담원",
-            "게임대회", "게임 대회", "PUBG", "배틀그라운드", "발로란트",
-            "오버워치", "스타크래프트", "PC방", "게임단", "프로게이머",
-            "케스파", "케스파컵", "PGC", "게임 리그", "게임 챔피언십",
-            "크래프톤", "라이엇", "블리자드", "넥슨", "엔씨소프트",
-            # 기타 무관 뉴스
-            "체육회", "체육인", "한마음대회", "체육대회", "달성군",
-            "전문가 찾기", "서비스 출시", "앱 출시", "플랫폼 출시"
-        ]
-    }
-}
+# 카테고리별 확장된 키워드 (레거시 호환성 - get_default_category_keywords() 참조)
+CATEGORY_KEYWORDS = get_default_category_keywords()
 
 def is_news_excluded(title, description, target_category, content=""):
     """뉴스가 제외 대상인지 확인 (수집 시 필터링용) - 제목+설명+본문 체크
@@ -1297,13 +1501,17 @@ def is_category_related(title, description, category):
     if category not in CATEGORY_KEYWORDS:
         return True  # 알 수 없는 카테고리는 모두 통과
     
-    keywords = CATEGORY_KEYWORDS[category]
+    keyword_data = CATEGORY_KEYWORDS[category]
     text = (title + " " + description).lower()
-    
+
     # 키워드가 하나라도 포함되어 있으면 관련 뉴스로 판단
-    for keyword in keywords:
-        if keyword in text:
-            return True
+    for key, keyword_list in keyword_data.items():
+        if key == 'exclude':
+            continue
+        if isinstance(keyword_list, list):
+            for keyword in keyword_list:
+                if keyword.lower() in text:
+                    return True
     
     return False
 
@@ -1370,19 +1578,8 @@ def is_today_news(pub_date_str):
         return True  # 파싱 실패시 포함
 
 def get_db_titles():
-    """DB에서 모든 뉴스 제목 가져오기"""
-    try:
-        from utils.database import get_connection
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT title FROM news")
-        titles = [row[0] for row in cur.fetchall()]
-        cur.close()
-        conn.close()
-        return titles
-    except Exception as e:
-        print(f"[WARN] DB 제목 로드 실패: {e}")
-        return []
+    """DB에서 모든 뉴스 제목 가져오기 (deprecated - DB removed)"""
+    return []
 
 def extract_key_phrases(text):
     """핵심 키워드/구절 추출 (중복 판별용)"""
@@ -1631,177 +1828,89 @@ def get_chrome_driver():
                 return None
     return driver
 
-def login_to_newstown(driver, wait):
-    """뉴스타운에 로그인하는 함수"""
-    driver.get("http://www.newstown.co.kr/member/login.html")
-    
-    # 아이디 입력
-    user_id_field = wait.until(EC.presence_of_element_located((By.ID, "user_id")))
-    user_id_field.clear()
-    user_id_field.send_keys(SITE_ID)
-    
-    # 비번 입력
-    driver.find_element(By.ID, "user_pw").send_keys(SITE_PW)
-    
-    # 로그인 버튼 클릭
-    driver.find_element(By.CSS_SELECTOR, "button[type='submit']").click()
-    time.sleep(1.5) # 로그인 처리 대기
-    return True
+def main(config: Optional[NewsCollectorConfig] = None):
+    """뉴스 수집 메인 함수
 
-def upload_to_newstown(title, content):
-    """뉴스타운에 기사를 자동으로 업로드하는 함수 (셀레니움)"""
-    
-    driver = get_chrome_driver()
-    if driver is None:
-        return False
-    
-    wait = WebDriverWait(driver, 15)
+    Args:
+        config: NewsCollectorConfig (선택적, 없으면 레거시 글로벌 변수 사용)
+    """
+    # config가 없으면 레거시 호환성을 위해 기본 config 생성
+    if config is None:
+        config = NewsCollectorConfig(
+            naver_client_id=NAVER_CLIENT_ID,
+            naver_client_secret=NAVER_CLIENT_SECRET,
+            sheet_url=SHEET_URL,
+            category_limits=CATEGORY_LIMITS.copy(),
+            keywords=KEYWORDS.copy(),
+            keyword_category_map=KEYWORD_CATEGORY_MAP.copy(),
+            category_keywords=CATEGORY_KEYWORDS,
+            display_count=DISPLAY_COUNT,
+            sort=SORT_OPTION,
+            category_filter=CATEGORY,
+            skip_mismatched_category=SKIP_MISMATCHED_CATEGORY,
+            enable_economy_category=ENABLE_ECONOMY_CATEGORY
+        )
 
-    try:
-        print(f"\n[START] [뉴스타운 업로드 시작] '{title[:30]}...'")
-
-        # -------------------------------------------------
-        # 1. 로그인 단계
-        # -------------------------------------------------
-        login_to_newstown(driver, wait)
-
-        # -------------------------------------------------
-        # 2. 글쓰기 폼 이동
-        # -------------------------------------------------
-        driver.get("http://www.newstown.co.kr/news/userArticleWriteForm.html")
-        
-        # -------------------------------------------------
-        # 3. 섹션 선택 (1차 섹션 -> 2차 섹션)
-        # -------------------------------------------------
-        try:
-            # 페이지 로드 대기
-            wait.until(EC.presence_of_element_located((By.NAME, "sectionCode")))
-            time.sleep(1)  # 페이지 완전 로드 대기
-            
-            # 1차 섹션 드롭다운 찾기 및 선택
-            section_element = wait.until(EC.presence_of_element_located((By.NAME, "sectionCode")))
-            section_select = Select(section_element)
-            section_select.select_by_visible_text("데일리 핫이슈")
-            print("[OK] 1차 섹션 선택: 데일리 핫이슈")
-            time.sleep(1.5)  # 2차 섹션 옵션이 로드될 때까지 대기
-            
-            # 2차 섹션 드롭다운 찾기 및 선택
-            sub_section_element = wait.until(EC.presence_of_element_located((By.NAME, "subSectionCode")))
-            sub_section_select = Select(sub_section_element)
-            sub_section_select.select_by_visible_text("연예")
-            print("[OK] 2차 섹션 선택: 연예")
-            time.sleep(0.5)  # 선택 완료 대기
-        except Exception as e:
-            print(f"[WARN] 섹션 선택 중 경고: {e}")
-            import traceback
-            traceback.print_exc()
-
-        # -------------------------------------------------
-        # 4. 제목 입력
-        # -------------------------------------------------
-        driver.find_element(By.ID, "title").send_keys(title)
-
-        # -------------------------------------------------
-        # 5. 본문 입력 (CKEditor / iframe 처리)
-        # -------------------------------------------------
-        print("✍️ 본문 작성 중...")
-        
-        # iframe 찾기 (에디터는 보통 iframe 안에 숨어있음)
-        iframe = wait.until(EC.presence_of_element_located((By.TAG_NAME, "iframe")))
-        driver.switch_to.frame(iframe) # iframe 내부로 진입
-        
-        body_area = driver.find_element(By.TAG_NAME, "body")
-        body_area.clear() # 기존 내용 비우기
-        body_area.send_keys(content) # 구글 시트 내용 입력
-        
-        driver.switch_to.default_content() # 다시 메인 화면으로 복귀
-
-        # -------------------------------------------------
-        # 6. 저장 버튼 클릭
-        # -------------------------------------------------
-        print("[SAVE] 저장 버튼 클릭...")
-        save_btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
-        
-        # 자바스크립트로 강제 클릭 (오류 방지)
-        driver.execute_script("arguments[0].click();", save_btn)
-        
-        # 저장 완료 대기 (3초)
-        time.sleep(3) 
-        
-        # 성공 여부 확인 (페이지가 이동했거나, 알림창이 떴는지 등)
-        print("[OK] 뉴스타운 업로드 완료!")
-        return True
-
-    except Exception as e:
-        print(f"[ERROR] 뉴스타운 업로드 실패: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-    finally:
-        # 브라우저 닫기
-        driver.quit()
-
-def main():
     print("="*60)
     print("  네이버 뉴스 → 구글 시트 수집기")
     print("="*60)
     print(f"\n[CONNECT] 구글 시트 연결 중...")
-    
+
     try:
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_name(str(CREDENTIALS_PATH), scope)
         client = gspread.authorize(creds)
-        
-        doc = client.open_by_url(SHEET_URL)
+
+        doc = client.open_by_url(config.sheet_url)
         sheet = doc.get_worksheet(0)  # 첫 번째 시트
         print("[OK] 구글 시트 연결 성공!")
-        
+
     except Exception as e:
         print(f"[ERROR] 구글 시트 연결 실패: {e}")
         print(f"   credentials.json 경로: {CREDENTIALS_PATH}")
         return
-    
+
     # ==========================================
     # 1단계: 기존 업로드된 뉴스 확인 (먼저 실행)
     # ==========================================
     existing_news_data = load_existing_news(sheet)
-    
-    # 카테고리별 수집 (CATEGORY_LIMITS 기준)
-    # 핵심: 키워드는 검색 필터, CATEGORY_LIMITS가 실제 저장 개수
+
+    # 카테고리별 수집 (config.category_limits 기준)
+    # 핵심: 키워드는 검색 필터, category_limits가 실제 저장 개수
     category_collected = {"연애": [], "경제": [], "스포츠": []}
     all_news_links = set()
-    
-    # 실제 목표 개수 (CATEGORY_LIMITS 기준)
-    target_count = sum(CATEGORY_LIMITS.values())
-    
+
+    # 실제 목표 개수 (config.category_limits 기준)
+    target_count = sum(config.category_limits.values())
+
     # DB에서 기존 제목들 로드 (중복 체크용)
     db_titles = get_db_titles()
     print(f"\n[DB] 기존 DB 뉴스 {len(db_titles)}개 로드 완료")
-    
+
     # 배치 내 수집된 제목들 (같은 배치 내 중복 체크용)
     batch_collected_titles = []
-    
+
     print(f"\n[SEARCH] 카테고리별 뉴스 수집 중...")
-    print(f"   목표: 연애 {CATEGORY_LIMITS.get('연애', 0)}개, 경제 {CATEGORY_LIMITS.get('경제', 0)}개, 스포츠 {CATEGORY_LIMITS.get('스포츠', 0)}개")
+    print(f"   목표: 연애 {config.category_limits.get('연애', 0)}개, 경제 {config.category_limits.get('경제', 0)}개, 스포츠 {config.category_limits.get('스포츠', 0)}개")
     print(f"   총 목표: {target_count}개\n")
-    
+
     # 키워드 목록을 랜덤으로 섞기 (매번 다른 순서로 검색)
-    keyword_list = list(KEYWORDS.items())
+    keyword_list = list(config.keywords.items())
     random.shuffle(keyword_list)
     print(f"   [RANDOM] 키워드 순서 랜덤 셔플 완료 ({len(keyword_list)}개)")
-    
+
     # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
     for keyword, search_count in keyword_list:
-        category = KEYWORD_CATEGORY_MAP.get(keyword, None)
-        if not category or category not in CATEGORY_LIMITS:
+        category = config.keyword_category_map.get(keyword, None)
+        if not category or category not in config.category_limits:
             continue
-        
-        cat_limit = CATEGORY_LIMITS.get(category, 0)
+
+        cat_limit = config.category_limits.get(category, 0)
         if cat_limit <= 0 or len(category_collected[category]) >= cat_limit:
             continue
-        
+
         print(f"   '{keyword}' 검색 중 (카테고리: {category}, 현재: {len(category_collected[category])}/{cat_limit}개)")
-        news_result = get_naver_news(keyword, display=min(search_count, 50), sort=SORT_OPTION)
+        news_result = get_naver_news(keyword, display=min(search_count, 50), sort=config.sort, config=config)
         
         if news_result and 'items' in news_result:
             for item in news_result['items']:
@@ -1852,10 +1961,10 @@ def main():
     all_news_items = []
     print(f"\n[STAT] 카테고리별 수집 결과:")
     for cat, items in category_collected.items():
-        limit = CATEGORY_LIMITS.get(cat, 0)
+        limit = config.category_limits.get(cat, 0)
         print(f"   - {cat}: {len(items)}/{limit}개")
         all_news_items.extend(items)
-    
+
     print(f"\n[STAT] 최종 수집: {len(all_news_items)}개 뉴스")
     
     # news_data 형식으로 변환
@@ -1901,7 +2010,7 @@ def main():
                 continue
             
             # 카테고리 필터링 (필요한 경우만)
-            if CATEGORY and not is_category_related(title, description, CATEGORY):
+            if config.category_filter and not is_category_related(title, description, config.category_filter):
                 filtered_count += 1
                 continue
             
@@ -1964,13 +2073,13 @@ def main():
                 additional_rounds += 1
                 print(f"   추가 검색 라운드 {additional_rounds}...")
                 
-                for keyword, count in KEYWORDS.items():
+                for keyword, count in config.keywords.items():
                     if len(valid_items) >= target_count:
                         break
-                    
+
                     # 더 많은 뉴스 검색
                     search_count = min(count * 5, 100)
-                    news_result = get_naver_news(keyword, display=search_count, sort=SORT_OPTION)
+                    news_result = get_naver_news(keyword, display=search_count, sort=config.sort, config=config)
                     
                     if news_result and 'items' in news_result:
                         for item in news_result['items']:
@@ -2084,20 +2193,20 @@ def main():
         
         # 카테고리별로 뉴스 그룹화
         news_by_category = {"연애": [], "스포츠": []}
-        if ENABLE_ECONOMY_CATEGORY:
+        if config.enable_economy_category:
             news_by_category["경제"] = []
 
         skipped_mismatch_count = 0  # 카테고리 불일치로 건너뛴 뉴스 수
         skipped_validation_count = 0  # 카테고리 검증 실패로 건너뛴 뉴스 수
         
         for result in news_results:
-            # 수집 시 지정된 카테고리 사용 (이미 CATEGORY_LIMITS 기반으로 수집됨)
+            # 수집 시 지정된 카테고리 사용 (이미 config.category_limits 기반으로 수집됨)
             category = result.get('_category', '')
-            
+
             if not category:
                 # 카테고리가 없으면 키워드에서 추론
                 search_keyword = result.get('_search_keyword', '')
-                category = KEYWORD_CATEGORY_MAP.get(search_keyword, '연애')
+                category = config.keyword_category_map.get(search_keyword, '연애')
             
             # 강화된 카테고리 검증 (제목+본문 체크)
             title = result.get('title', '')
@@ -2148,7 +2257,7 @@ def main():
         print(f"\n[STAT] 데이터 준비 중... (목표: {target_count}개)")
         count = 0
         category_stats = {"연애": 0, "스포츠": 0}
-        if ENABLE_ECONOMY_CATEGORY:
+        if config.enable_economy_category:
             category_stats["경제"] = 0
         rows_to_save = []  # 배치 저장을 위한 데이터 리스트
 
@@ -2160,9 +2269,9 @@ def main():
             # 이미 지정된 카테고리 사용
             category = result.get('_category', '')
             search_keyword = result.get('_search_keyword', '')
-            
+
             if not category:
-                category = KEYWORD_CATEGORY_MAP.get(search_keyword, '연애')
+                category = config.keyword_category_map.get(search_keyword, '연애')
             
             # 카테고리 통계 업데이트
             if category in category_stats:
@@ -2204,19 +2313,7 @@ def main():
                         saved_count += len(batch)
                         print(f"   [OK] 배치 {batch_num}/{total_batches} 저장 완료 ({len(batch)}개, 총 {saved_count}/{len(rows_to_save)}개)")
                         
-                        # 데이터베이스에도 저장
-                        try:
-                            from utils.database import save_news
-                            for row in batch:
-                                save_news(
-                                    title=row[0],
-                                    content=row[1],
-                                    link=row[2],
-                                    category=row[3] if len(row) > 3 else "미분류",
-                                    search_keyword=row[4] if len(row) > 4 else None
-                                )
-                        except Exception as db_err:
-                            print(f"   [WARN] DB 저장 실패: {db_err}")
+                        # DB mirroring removed — spreadsheet is the single source of truth
 
                         # 배치 간 딜레이 (5초)
                         if batch_end < len(rows_to_save):
@@ -2262,15 +2359,15 @@ def main():
 
         # 건너뛰기/불일치 통계
         print(f"\n [품질 관리 통계]")
-        if SKIP_MISMATCHED_CATEGORY:
+        if config.skip_mismatched_category:
             print(f"    - 건너뛴 뉴스 (카테고리 불일치): {skipped_mismatch_count}개")
         else:
             print(f"    - 카테고리 불일치 경고: {category_mismatch_count}개 (저장됨)")
 
         # 설정 현황
         print(f"\n [현재 설정]")
-        print(f"    - 불일치 건너뛰기: {'활성화' if SKIP_MISMATCHED_CATEGORY else '비활성화'}")
-        print(f"    - 경제 카테고리: {'활성화' if ENABLE_ECONOMY_CATEGORY else '비활성화'}")
+        print(f"    - 불일치 건너뛰기: {'활성화' if config.skip_mismatched_category else '비활성화'}")
+        print(f"    - 경제 카테고리: {'활성화' if config.enable_economy_category else '비활성화'}")
         print("="*60)
     else:
         print("[ERROR] 네이버 검색 결과가 없습니다.")

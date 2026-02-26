@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>뉴스 자동화 시스템</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="login-page" class="page">
+        <div class="login-container">
+            <h1>뉴스 자동화 시스템</h1>
+            <hr>
+            <div class="login-box">
+                <h3>로그인</h3>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="login-username">사용자명</label>
+                        <input type="text" id="login-username" placeholder="아이디" autocomplete="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">비밀번호</label>
+                        <input type="password" id="login-password" placeholder="비밀번호" autocomplete="current-password" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="login-remember">
+                            <span>로그인 유지</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary full-width">로그인</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app" class="page hidden">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-user">
+                <strong id="user-username">사용자</strong> 님
+            </div>
+            <button id="logout-btn" class="btn btn-secondary full-width">로그아웃</button>
+            <hr>
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-page="dashboard">대시보드</button>
+                <button class="nav-btn" data-page="search">키워드 검색</button>
+                <button class="nav-btn" data-page="news">뉴스 조회</button>
+                <button class="nav-btn" data-page="logs">로그</button>
+                <button class="nav-btn" data-page="settings">설정</button>
+            </nav>
+            <hr>
+            <button id="stop-all-btn" class="btn btn-danger full-width">모든 프로세스 중지</button>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Hamburger menu button for mobile -->
+            <button class="hamburger-btn" id="hamburgerBtn" aria-label="메뉴 열기">&#9776;</button>
+            <!-- Dashboard Page -->
+            <section id="dashboard-page" class="content-page active">
+                <h1>대시보드</h1>
+                <div class="link-buttons">
+                    <a id="sheet-link" href="#" target="_blank" class="btn btn-secondary" title="설정에서 구글 시트 URL을 설정하세요">스프레드시트</a>
+                    <a id="make-link" href="#" target="_blank" class="btn btn-secondary" title="설정에서 Make 시나리오 URL을 설정하세요">Make 시나리오</a>
+                </div>
+
+                <h3>뉴스 자동 업로드</h3>
+                <div id="platform-selection" class="platform-selection">
+                    <p class="caption">업로드할 플랫폼을 선택하세요:</p>
+                    <div id="platform-checkboxes" class="platform-checkboxes"></div>
+                </div>
+
+                <div class="status-row">
+                    <div class="status-box">
+                        <div class="status-header">
+                            <strong>업로드 감시</strong>
+                            <span id="upload-status" class="status-indicator">○ 중지됨</span>
+                        </div>
+                        <button id="upload-toggle-btn" class="btn btn-primary full-width">업로드 시작</button>
+                    </div>
+
+                    <div class="status-box">
+                        <div class="status-header">
+                            <strong>완료행 삭제</strong>
+                            <span id="deletion-status" class="status-indicator">○ 중지됨</span>
+                        </div>
+                        <button id="deletion-toggle-btn" class="btn btn-primary full-width">완료행 삭제 시작</button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <h3>뉴스 수집</h3>
+                <p class="caption">네이버 API로 뉴스를 수집하여 스프레드시트에 저장합니다</p>
+                <div id="schedule-status" class="status-info"></div>
+
+                <div class="status-row-single">
+                    <div class="status-box">
+                        <div class="status-header">
+                            <strong>뉴스 수집</strong>
+                            <span id="news-status" class="status-indicator">○ 중지됨</span>
+                        </div>
+                        <button id="news-toggle-btn" class="btn btn-primary full-width">뉴스 수집 시작</button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <details class="expander">
+                    <summary>수집 설정</summary>
+                    <div class="form-group">
+                        <label>정렬 방식:</label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="sort-option" value="sim" checked> 인기순</label>
+                            <label><input type="radio" name="sort-option" value="date"> 최신순</label>
+                        </div>
+                        <button id="save-sort-btn" class="btn btn-primary">정렬 방식 저장</button>
+                    </div>
+                </details>
+
+                <details class="expander">
+                    <summary>발행 개수 설정</summary>
+                    <div class="form-group">
+                        <div class="radio-group">
+                            <label><input type="radio" name="pub-mode" value="all" checked> 전체 동일</label>
+                            <label><input type="radio" name="pub-mode" value="category"> 카테고리별</label>
+                        </div>
+                        <div id="pub-all-mode">
+                            <label>전체 카테고리 발행 개수:</label>
+                            <input type="number" id="total-pub" class="input-number" min="0" max="100" value="15">
+                            <button id="apply-total-pub" class="btn btn-primary">적용</button>
+                        </div>
+                        <div id="pub-category-mode" class="hidden">
+                            <div class="category-inputs">
+                                <div>
+                                    <label>연애:</label>
+                                    <input type="number" id="pub-연애" class="input-number" min="0" max="100" value="15">
+                                </div>
+                                <div>
+                                    <label>경제:</label>
+                                    <input type="number" id="pub-경제" class="input-number" min="0" max="100" value="15">
+                                </div>
+                                <div>
+                                    <label>스포츠:</label>
+                                    <input type="number" id="pub-스포츠" class="input-number" min="0" max="100" value="15">
+                                </div>
+                            </div>
+                            <button id="apply-cat-pub" class="btn btn-primary">적용</button>
+                        </div>
+                        <p class="caption" id="pub-summary"></p>
+                    </div>
+                </details>
+
+                <details class="expander">
+                    <summary>자동 수집 스케줄</summary>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="schedule-enabled">
+                            <span>자동 수집 활성화</span>
+                        </label>
+                        <label>수집 간격 (시간):</label>
+                        <input type="number" id="schedule-interval" class="input-number" min="1" max="24" value="3">
+                        <p class="caption" id="schedule-info">마지막 수집: 아직 실행되지 않음</p>
+                        <button id="save-schedule" class="btn btn-primary">스케줄 설정 저장</button>
+                    </div>
+                </details>
+
+                <hr>
+
+                <details class="expander">
+                    <summary>키워드 설정</summary>
+                    <div id="keyword-settings"></div>
+                    <button id="save-keywords-btn" class="btn btn-primary" style="margin-top: 10px;">키워드 저장</button>
+                </details>
+            </section>
+
+            <!-- Search Page -->
+            <section id="search-page" class="content-page">
+                <h1>키워드 검색</h1>
+                <div class="search-form">
+                    <input type="text" id="search-keyword" placeholder="키워드 입력" class="flex-1">
+                    <input type="number" id="search-count" class="input-number" min="5" max="100" value="20" placeholder="개수">
+                    <select id="search-sort">
+                        <option value="date">최신순</option>
+                        <option value="sim">인기순</option>
+                    </select>
+                    <select id="search-category">
+                        <option value="연애">연애</option>
+                        <option value="경제">경제</option>
+                        <option value="스포츠">스포츠</option>
+                    </select>
+                    <button id="search-btn" class="btn btn-primary">검색</button>
+                </div>
+                <div id="search-results" class="search-results hidden">
+                    <div class="search-actions">
+                        <button id="save-all-btn" class="btn btn-primary">전체 저장</button>
+                        <button id="select-all-btn" class="btn btn-secondary">전체 선택</button>
+                        <button id="deselect-all-btn" class="btn btn-secondary">선택 해제</button>
+                    </div>
+                    <p class="caption" id="search-summary"></p>
+                    <div id="search-results-list"></div>
+                    <div id="selected-actions" class="selected-actions hidden">
+                        <button id="save-selected-btn" class="btn btn-primary">선택한 항목 저장</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- News Page -->
+            <section id="news-page" class="content-page">
+                <h1>뉴스 조회</h1>
+                <div id="news-stats" class="stats-row">
+                    <div class="metric-box">
+                        <div class="metric-num" id="stat-total">0</div>
+                        <div class="metric-label">전체</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-num" id="stat-pending">0</div>
+                        <div class="metric-label">대기</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-num" id="stat-uploaded">0</div>
+                        <div class="metric-label">업로드</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="metric-num" id="stat-failed">0</div>
+                        <div class="metric-label">실패</div>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="pending-tab">📁 시트 저장됨</button>
+                    <button class="tab-btn" data-tab="uploaded-tab">✅ 업로드됨</button>
+                    <button class="tab-btn" data-tab="sync-tab">🔄 동기화</button>
+                </div>
+
+                <div id="pending-tab" class="tab-content active">
+                    <div class="filter-bar">
+                        <select id="pending-category">
+                            <option value="all">전체</option>
+                            <option value="연애">연애</option>
+                            <option value="경제">경제</option>
+                            <option value="스포츠">스포츠</option>
+                        </select>
+                        <select id="pending-sort">
+                            <option value="newest">최신순</option>
+                            <option value="oldest">오래된순</option>
+                        </select>
+                        <button id="delete-all-pending" class="btn btn-secondary">전체 삭제</button>
+                        <button id="refresh-news-btn" class="btn btn-primary">새로고침</button>
+                    </div>
+                    <div id="pending-news-list"></div>
+                </div>
+
+                <div id="uploaded-tab" class="tab-content">
+                    <div class="filter-bar">
+                        <select id="uploaded-category">
+                            <option value="all">전체</option>
+                            <option value="연애">연애</option>
+                            <option value="경제">경제</option>
+                            <option value="스포츠">스포츠</option>
+                        </select>
+                        <select id="uploaded-sort">
+                            <option value="newest">최신순</option>
+                            <option value="oldest">오래된순</option>
+                        </select>
+                    </div>
+                    <div id="uploaded-news-list"></div>
+                </div>
+
+                <div id="sync-tab" class="tab-content">
+                    <h3>스프레드시트 상태</h3>
+                    <button id="check-sync-btn" class="btn btn-primary">상태 확인</button>
+                    <div id="sync-status" class="hidden">
+                        <div class="stats-row">
+                            <div class="metric-box">
+                                <div class="metric-num" id="sync-synced">0</div>
+                                <div class="metric-label">시트 행 수</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs Page -->
+            <section id="logs-page" class="content-page">
+                <h1>실시간 로그</h1>
+                <div class="log-controls">
+                    <button id="refresh-logs" class="btn btn-secondary">새로고침</button>
+                    <button id="clear-logs" class="btn btn-secondary">로그 삭제</button>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="auto-refresh-logs">
+                        <span>자동 새로고침 (5초)</span>
+                    </label>
+                </div>
+                <select id="log-category-filter">
+                    <option value="all">전체</option>
+                    <option value="NEWS">뉴스수집</option>
+                    <option value="UPLOAD">업로드</option>
+                    <option value="SYSTEM">시스템</option>
+                </select>
+                <div id="logs-container" class="logs-container"></div>
+            </section>
+
+            <!-- Settings Page -->
+            <section id="settings-page" class="content-page">
+                <h1>설정</h1>
+                <div class="settings-grid">
+                    <div>
+                        <h3>구글 시트</h3>
+                        <div class="form-group">
+                            <input type="text" id="sheet-url" placeholder="URL" class="full-width">
+                            <button id="save-sheet-btn" class="btn btn-primary">저장</button>
+                        </div>
+
+                        <h3>업로드 플랫폼 관리</h3>
+                        <p class="caption">향후 광고 업체 추가를 위해 플랫폼을 동적으로 관리할 수 있습니다</p>
+                        <div id="platforms-list"></div>
+
+                        <details class="expander">
+                            <summary>새 플랫폼 추가</summary>
+                            <div class="form-group">
+                                <input type="text" id="new-platform-id" placeholder="플랫폼 ID (영문)" class="full-width">
+                                <input type="text" id="new-platform-name" placeholder="플랫폼 이름" class="full-width">
+                                <div class="input-row">
+                                    <input type="number" id="new-title-col" class="input-number" placeholder="제목 열" min="1" max="26" value="14">
+                                    <input type="number" id="new-content-col" class="input-number" placeholder="내용 열" min="1" max="26" value="15">
+                                    <input type="number" id="new-done-col" class="input-number" placeholder="완료 열" min="1" max="26" value="16">
+                                </div>
+                                <button id="add-platform-btn" class="btn btn-primary">플랫폼 추가</button>
+                            </div>
+                        </details>
+
+                        <h3>골프타임즈 로그인</h3>
+                        <div class="form-group">
+                            <input type="text" id="golftimes-id" placeholder="아이디" class="full-width">
+                            <input type="password" id="golftimes-pw" placeholder="비밀번호" class="full-width">
+                            <button id="save-golftimes-btn" class="btn btn-primary">저장</button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3>자동화 간격</h3>
+                        <div class="form-group">
+                            <label>업로드 체크 (초):</label>
+                            <input type="number" id="check-interval" class="input-number" min="10" max="600" value="30">
+                            <label>삭제 간격 (분):</label>
+                            <input type="number" id="delete-interval" class="input-number" min="1" max="1440" value="60">
+                            <label>동시 업로드 개수:</label>
+                            <input type="number" id="concurrent-uploads" class="input-number" min="1" max="3" value="2">
+                            <p class="caption">플랫폼에 동시에 업로드할 뉴스 개수 (1~3개)</p>
+                            <button id="save-interval-btn" class="btn btn-primary">저장</button>
+                        </div>
+
+                        <!-- kkhwan 전용: 네이버 API 사용량 -->
+                        <div id="kkhwan-only-settings" class="hidden">
+                            <hr>
+                            <h3>네이버 API 사용량</h3>
+                            <div id="api-usage-info"></div>
+                        </div>
+
+                        <div id="admin-only-settings" class="hidden">
+                            <hr>
+                            <h3>네이버 API 설정</h3>
+                            <p class="caption">입력 후 저장 버튼 클릭 시 즉시 적용됩니다</p>
+                            <div class="form-group">
+                                <input type="text" id="naver-client-id" placeholder="Client ID" class="full-width">
+                                <input type="password" id="naver-client-secret" placeholder="Client Secret" class="full-width">
+                                <button id="save-api-btn" class="btn btn-primary">저장 및 적용</button>
+                            </div>
+
+                            <hr>
+                            <h3>사용자 관리</h3>
+                            <p class="caption">대시보드 접속 사용자 관리 (관리자 전용)</p>
+                            <div id="users-list"></div>
+
+                            <hr>
+                            <h3>새 사용자 추가</h3>
+                            <div class="form-group">
+                                <input type="text" id="new-username" placeholder="사용자 ID" class="full-width">
+                                <input type="password" id="new-user-pw" placeholder="비밀번호" class="full-width">
+                                <select id="new-user-role" class="full-width">
+                                    <option value="user">user</option>
+                                    <option value="admin">admin</option>
+                                </select>
+                                <button id="add-user-btn" class="btn btn-primary">사용자 추가</button>
+                            </div>
+                        </div>
+
+                        <div id="user-settings">
+                            <hr>
+                            <h3>내 비밀번호 변경</h3>
+                            <div class="form-group">
+                                <input type="password" id="current-pw" placeholder="현재 비밀번호" autocomplete="current-password" class="full-width">
+                                <input type="password" id="my-new-pw" placeholder="새 비밀번호" autocomplete="new-password" class="full-width">
+                                <input type="password" id="my-new-pw-confirm" placeholder="새 비밀번호 확인" autocomplete="new-password" class="full-width">
+                                <button id="change-my-pw-btn" class="btn btn-primary">비밀번호 변경</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Sidebar overlay for mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/websocket.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
