@@ -42,10 +42,14 @@ _shutdown_requested = False
 _shutdown_event = threading.Event()
 
 
+# 플랫폼별 완료 열 (1-based)
+# H열(8) = golftimes 완료, L열(12) = bizwnews 완료
+COMPLETED_COLUMNS = [8, 12]  # 모든 열이 '완료'일 때만 행 삭제
+
 # 플랫폼별 설정
 PLATFORM_CONFIGS = {
     'golftimes': {
-        'completed_column': 13,  # M열
+        'completed_column': 8,  # H열
         'display_name': '골프타임즈',
         'module_file': '완료행_삭제.py',
         'class_name': 'CompletedRowDeleter'
@@ -165,14 +169,14 @@ def run_deletion(config):
     sheet_url = config.get('sheet_url', '')
     delete_interval = config.get('delete_interval', 60)
     max_delete_count = config.get('max_delete_count', 10)
-    completed_column = config.get('completed_column', platform_config['completed_column'])
+    completed_columns = config.get('completed_columns', COMPLETED_COLUMNS)
 
+    col_names = ', '.join(f"{chr(64 + c)}({c})" for c in completed_columns)
     print(f"설정:")
-    print(f"   - 플랫폼: {platform_config['display_name']}")
     print(f"   - 시트 URL: {sheet_url[:50]}...")
     print(f"   - 삭제 간격: {delete_interval}분")
     print(f"   - 최대 삭제 개수: {max_delete_count}")
-    print(f"   - 완료 표시 열: {completed_column} ({chr(64 + completed_column)}열)")
+    print(f"   - 완료 체크 열: {col_names} (모두 완료 시 행 삭제)")
 
     # Deleter 클래스 로드
     deleter_class = get_deleter_class(platform)
@@ -186,7 +190,7 @@ def run_deletion(config):
             sheet_url=sheet_url,
             delete_interval=delete_interval,
             max_delete_count=max_delete_count,
-            completed_column=completed_column
+            completed_columns=completed_columns
         )
 
         # 연결 확인
@@ -195,7 +199,7 @@ def run_deletion(config):
             return
 
         print("연결 성공")
-        print(f"\n{chr(64 + completed_column)}열({platform_config['display_name']} 완료 표시 열) 감시 중...")
+        print(f"\n{col_names} 열 감시 중 (모두 완료 시 행 삭제)...")
         print(f"{delete_interval}분마다 완료된 행 자동 삭제")
         print(f"한 번에 최대 {max_delete_count}개 행만 삭제\n")
 

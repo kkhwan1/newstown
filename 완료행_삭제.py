@@ -63,7 +63,8 @@ class CompletedRowDeleter:
         credentials_file: str = 'credentials.json',
         delete_interval: int = DEFAULT_DELETE_INTERVAL,
         max_delete_count: int = DEFAULT_MAX_DELETE_COUNT,
-        completed_column: int = DEFAULT_COMPLETED_COLUMN
+        completed_column: int = DEFAULT_COMPLETED_COLUMN,
+        completed_columns: list = None
     ):
         """
         초기화
@@ -73,13 +74,15 @@ class CompletedRowDeleter:
             credentials_file: 서비스 계정 인증 파일 경로
             delete_interval: 삭제 작업 간격 (분)
             max_delete_count: 한 번에 삭제할 최대 행 개수
-            completed_column: 완료 표시 열 번호 (1-based)
+            completed_column: 완료 표시 열 번호 (1-based, 단일 열 체크 시)
+            completed_columns: 완료 표시 열 목록 (1-based, 모든 열이 완료여야 삭제)
         """
         self.sheet_url = sheet_url
         self.credentials_file = credentials_file
         self.delete_interval = delete_interval
         self.max_delete_count = max_delete_count
         self.completed_column = completed_column
+        self.completed_columns = completed_columns or []
         self.client: Optional[gspread.Client] = None
         self.sheet: Optional[gspread.Worksheet] = None
 
@@ -151,6 +154,9 @@ class CompletedRowDeleter:
         """
         완료 표시 열에 "완료"가 포함된 행을 찾아서 삭제
 
+        completed_columns가 설정된 경우: 모든 열이 "완료"일 때만 삭제
+        그렇지 않으면: completed_column 단일 열 기준 삭제
+
         Returns:
             삭제된 행의 개수
         """
@@ -158,14 +164,24 @@ class CompletedRowDeleter:
             rows = self._retry_with_backoff(self.sheet.get_all_values)
             rows_to_delete = []
 
+            # 체크할 열 목록 결정
+            check_columns = self.completed_columns if self.completed_columns else [self.completed_column]
+
             # 2번째 행부터 루프 (1행은 헤더)
             for i, row in enumerate(rows[1:], start=2):
-                if len(row) < self.completed_column:
+                max_col = max(check_columns)
+                if len(row) < max_col:
                     continue
 
-                completed_status = row[self.completed_column - 1].strip() if row[self.completed_column - 1] else ""
+                # 모든 체크 열이 "완료"인지 확인
+                all_completed = True
+                for col in check_columns:
+                    cell_value = row[col - 1].strip() if col - 1 < len(row) and row[col - 1] else ""
+                    if not (cell_value and "완료" in cell_value):
+                        all_completed = False
+                        break
 
-                if completed_status and "완료" in completed_status:
+                if all_completed:
                     rows_to_delete.append(i)
 
             if not rows_to_delete:
