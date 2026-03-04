@@ -489,15 +489,20 @@ const DashboardHandler = {
             () => this.toggleProcess('news')
         );
 
-        // Platform selection
-        document.querySelectorAll('.platform-checkbox input').forEach(checkbox => {
+        // Platform selection + category filter (event delegation for dynamic elements)
+        const platformContainer = document.getElementById('platform-checkboxes');
+        if (platformContainer) {
             AppState.trackListener(
                 this.handlerName,
-                checkbox,
+                platformContainer,
                 'change',
-                () => this.updateSelectedPlatforms()
+                (e) => {
+                    if (e.target.matches('.platform-checkbox input, .platform-categories input')) {
+                        this.updateSelectedPlatforms();
+                    }
+                }
             );
-        });
+        }
 
         // Sort option
         AppState.trackListener(
@@ -777,15 +782,43 @@ const DashboardHandler = {
             }
 
             if (platforms && Object.keys(platforms).length > 0) {
+                // Get available categories from news_collection keywords
+                const categories = Object.keys(config.news_collection?.keywords || {});
+
                 platformsContainer.innerHTML = '';
                 Object.entries(platforms).forEach(([id, platform]) => {
+                    const allowedCats = platform.allowed_categories || [];
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'platform-item';
+
+                    // Platform enable checkbox
                     const label = document.createElement('label');
                     label.className = 'platform-checkbox';
                     label.innerHTML = `
                         <input type="checkbox" value="${escapeHTML(id)}" ${platform.enabled ? 'checked' : ''}>
                         <span>${escapeHTML(platform.display_name || id)}</span>
                     `;
-                    platformsContainer.appendChild(label);
+                    wrapper.appendChild(label);
+
+                    // Category filter checkboxes
+                    if (categories.length > 0) {
+                        const catGroup = document.createElement('div');
+                        catGroup.className = 'platform-categories';
+                        catGroup.dataset.platform = id;
+                        categories.forEach(cat => {
+                            const checked = allowedCats.length === 0 || allowedCats.includes(cat);
+                            const catLabel = document.createElement('label');
+                            catLabel.className = 'category-chip';
+                            catLabel.innerHTML = `
+                                <input type="checkbox" value="${escapeHTML(cat)}" ${checked ? 'checked' : ''}>
+                                <span>${escapeHTML(cat)}</span>
+                            `;
+                            catGroup.appendChild(catLabel);
+                        });
+                        wrapper.appendChild(catGroup);
+                    }
+
+                    platformsContainer.appendChild(wrapper);
                 });
             }
         }
@@ -887,10 +920,21 @@ const DashboardHandler = {
                 const platformId = checkbox.value || checkbox.dataset.platform;
                 if (platformId && platforms[platformId]) {
                     platforms[platformId].enabled = checkbox.checked;
+
+                    // Save allowed_categories from category checkboxes
+                    const catGroup = document.querySelector(`.platform-categories[data-platform="${platformId}"]`);
+                    if (catGroup) {
+                        const cats = [];
+                        catGroup.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                            cats.push(cb.value);
+                        });
+                        platforms[platformId].allowed_categories = cats;
+                    }
                 }
             });
 
             await API.updateConfig('upload_platforms', platforms);
+            Utils.clearCache();
             Utils.showToast('플랫폼 설정이 저장되었습니다', 'success');
         } catch (error) {
             Utils.showToast(error.message || '플랫폼 저장 실패', 'error');

@@ -98,6 +98,10 @@ class PlatformConfig(BaseModel):
     content_column: int = Field(default=6, ge=1, le=26, description="내용 열 번호")
     completed_column: int = Field(default=8, ge=1, le=26, description="완료 열 번호")
     credentials_section: str = Field(default="", description="인증 정보 섹션")
+    allowed_categories: List[str] = Field(
+        default_factory=list,
+        description="허용 카테고리 (빈 리스트=전체 허용)"
+    )
 
 
 class UploadPlatformsConfig(BaseModel):

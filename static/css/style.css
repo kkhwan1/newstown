@@ -415,6 +415,40 @@ textarea:focus {
     background: var(--bg-tertiary);
 }
 
+.platform-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.platform-categories {
+    display: flex;
+    gap: 4px;
+    margin-left: 4px;
+}
+
+.category-chip {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    font-size: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.category-chip:hover {
+    background: var(--bg-tertiary);
+}
+
+.category-chip input:checked + span {
+    color: var(--primary);
+    font-weight: 600;
+}
+
 /* Expander */
 .expander {
     border: 1px solid var(--border-light);

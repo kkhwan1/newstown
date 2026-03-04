@@ -292,9 +292,21 @@ def run_monitor(config):
                         rows_to_upload = []
                         row_indices = []
 
+                        # Category filtering: D열 (index 3, 0-based)
+                        CATEGORY_COL = 3
+                        allowed_cats = platform_config.get('allowed_categories', [])
+                        if allowed_cats:
+                            log(f"[{platform_id}] 카테고리 필터: {allowed_cats}")
+
                         for row_idx, row in enumerate(all_data[1:], start=2):  # Skip header, 1-indexed
                             if len(row) <= max(title_col, content_col):
                                 continue
+
+                            # Category filter
+                            if allowed_cats:
+                                row_cat = row[CATEGORY_COL].strip() if CATEGORY_COL < len(row) else ''
+                                if row_cat not in allowed_cats:
+                                    continue
 
                             title = row[title_col] if title_col < len(row) else ''
                             content = row[content_col] if content_col < len(row) else ''
