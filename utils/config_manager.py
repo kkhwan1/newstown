@@ -94,6 +94,10 @@ class ConfigManager:
                 "site_id": "thegolftimes",
                 "site_pw": ""
             },
+            "bizwnews": {
+                "site_id": "",
+                "site_pw": ""
+            },
             "upload_platforms": {
                 "golftimes": {
                     "enabled": False,
@@ -102,6 +106,14 @@ class ConfigManager:
                     "content_column": 11,
                     "completed_column": 12,
                     "credentials_section": "golftimes"
+                },
+                "bizwnews": {
+                    "enabled": False,
+                    "display_name": "비즈월드",
+                    "title_column": 9,
+                    "content_column": 10,
+                    "completed_column": 11,
+                    "credentials_section": "bizwnews"
                 }
             }
         }
@@ -153,6 +165,10 @@ class ConfigManager:
             "site_id": "thegolftimes",
             "site_pw": ""
         },
+        "bizwnews": {
+            "site_id": "",
+            "site_pw": ""
+        },
         "upload_platforms": {
             "golftimes": {
                 "enabled": False,
@@ -161,6 +177,14 @@ class ConfigManager:
                 "content_column": 11,
                 "completed_column": 12,
                 "credentials_section": "golftimes"
+            },
+            "bizwnews": {
+                "enabled": False,
+                "display_name": "비즈월드",
+                "title_column": 9,
+                "content_column": 10,
+                "completed_column": 11,
+                "credentials_section": "bizwnews"
             }
         }
     }

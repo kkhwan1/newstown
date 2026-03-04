@@ -86,7 +86,7 @@ class GolftimesUploader(PlatformUploader):
         options.add_argument("--disable-gpu")
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--disable-extensions")
-        options.add_argument("--single-process")
+        # options.add_argument("--single-process")  # Causes crash on Windows
 
         # Try to find chromium in PATH (for Replit-like environments)
         chromium_path = shutil.which('chromium')
@@ -225,10 +225,15 @@ class GolftimesUploader(PlatformUploader):
             bool: True if content input successful
         """
         try:
-            # 스프레드시트 원본 형식 보존: \n\n은 문단 구분, 각 문단은 <p> 태그로 감싸기
-            paragraphs = content.split('\n\n')
-            html_content = '</p><p>'.join(p.strip() for p in paragraphs if p.strip())
-            html_content = f"<p>{html_content}</p>"
+            # 스프레드시트 원본 형식 보존:
+            # 각 \n을 문단 구분으로 처리, 문단 사이 빈 줄 삽입
+            lines = content.split('\n')
+            html_paragraphs = []
+            for line in lines:
+                line = line.strip()
+                if line:
+                    html_paragraphs.append(f"<p>{line}</p>")
+            html_content = ''.join(html_paragraphs) if html_paragraphs else f"<p>{content}</p>"
 
             # CKEditor JavaScript API로 내용 입력
             js_script = f"CKEDITOR.instances['FCKeditor1'].setData({json.dumps(html_content)});"

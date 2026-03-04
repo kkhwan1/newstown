@@ -262,9 +262,11 @@ def run_monitor(config):
                         credentials_config = config.get(credentials_section, {})
 
                         # Prepare platform config with credentials for uploader
-                        # Priority: config[credentials_section] > environment variables
+                        # Generic site_id/site_pw for all platforms + legacy golftimes keys
                         platform_config_with_creds = {
                             **platform_config,
+                            'site_id': credentials_config.get('site_id', ''),
+                            'site_pw': credentials_config.get('site_pw', ''),
                             'golftimes_id': credentials_config.get('site_id') or os.environ.get('GOLFTIMES_ID', ''),
                             'golftimes_pw': credentials_config.get('site_pw') or os.environ.get('GOLFTIMES_PW', ''),
                             'headless': platform_config.get('headless', True),
@@ -295,7 +297,7 @@ def run_monitor(config):
                             # Check status column if exists
                             if status_col is not None and status_col < len(row):
                                 status = str(row[status_col]).strip().lower()
-                                if status in ['완료', 'completed', '업로드완료', '✓']:
+                                if status.startswith('완료') or status in ['completed', '업로드완료', '✓']:
                                     continue
 
                             if title and content:
@@ -329,7 +331,9 @@ def run_monitor(config):
                                         success_count += 1
                                         # Update status in sheet
                                         if status_col is not None:
-                                            sheet.update_cell(row_idx, status_col + 1, '완료')
+                                            from datetime import datetime as _dt
+                                            _now = _dt.now().strftime('%Y-%m-%d %H:%M')
+                                            sheet.update_cell(row_idx, status_col + 1, f'완료 ({_now})')
                                         log(f"[{platform_id}] '{title[:30]}...' 업로드 완료", "SUCCESS")
                                     else:
                                         log(f"[{platform_id}] '{title[:30]}...' 업로드 실패: {result.error_message}", "WARN")

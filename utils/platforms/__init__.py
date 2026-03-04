@@ -21,6 +21,11 @@ from .golftimes import (
     upload_to_golftimes
 )
 
+from .bizwnews import (
+    BizwnewsUploader,
+    upload_to_bizwnews
+)
+
 __all__ = [
     # Base classes
     'PlatformUploader',
@@ -30,9 +35,11 @@ __all__ = [
 
     # Platform implementations
     'GolftimesUploader',
+    'BizwnewsUploader',
 
     # Convenience functions
     'upload_to_golftimes',
+    'upload_to_bizwnews',
 
     # Factory
     'create_uploader',
@@ -57,6 +64,7 @@ def create_uploader(platform_name: str, config: dict) -> PlatformUploader:
     """
     platform_map = {
         'golftimes': GolftimesUploader,
+        'bizwnews': BizwnewsUploader,
     }
 
     uploader_class = platform_map.get(platform_name.lower())

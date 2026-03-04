@@ -1688,6 +1688,12 @@ const SettingsHandler = {
             document.getElementById('golftimes-pw').value = config.golftimes.site_pw || '';
         }
 
+        // Bizwnews credentials
+        if (config.bizwnews) {
+            document.getElementById('bizwnews-id').value = config.bizwnews.site_id || '';
+            document.getElementById('bizwnews-pw').value = config.bizwnews.site_pw || '';
+        }
+
         // Upload intervals
         if (config.upload_monitor) {
             document.getElementById('check-interval').value = config.upload_monitor.check_interval || 30;
@@ -1913,6 +1919,25 @@ const SettingsHandler = {
                 try {
                     await API.setConfig('golftimes', 'site_id', id);
                     await API.setConfig('golftimes', 'site_pw', pw);
+                    Utils.clearCache();
+                    Utils.showToast('저장되었습니다', 'success');
+                } catch (error) {
+                    Utils.showToast(error.message, 'error');
+                }
+            }
+        );
+
+        // Save Bizwnews credentials
+        AppState.trackListener(
+            this.handlerName,
+            document.getElementById('save-bizwnews-btn'),
+            'click',
+            async () => {
+                const id = document.getElementById('bizwnews-id').value;
+                const pw = document.getElementById('bizwnews-pw').value;
+                try {
+                    await API.setConfig('bizwnews', 'site_id', id);
+                    await API.setConfig('bizwnews', 'site_pw', pw);
                     Utils.clearCache();
                     Utils.showToast('저장되었습니다', 'success');
                 } catch (error) {

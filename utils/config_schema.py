@@ -149,6 +149,9 @@ class AppConfig(BaseModel):
     golftimes: PlatformCredentials = Field(
         default=PlatformCredentials(site_id="thegolftimes", site_pw="")
     )
+    bizwnews: PlatformCredentials = Field(
+        default=PlatformCredentials(site_id="", site_pw="")
+    )
     upload_platforms: Dict[str, PlatformConfig] = Field(
         default_factory=lambda: {
             "golftimes": PlatformConfig(
@@ -158,6 +161,14 @@ class AppConfig(BaseModel):
                 content_column=11,
                 completed_column=12,
                 credentials_section="golftimes"
+            ),
+            "bizwnews": PlatformConfig(
+                enabled=False,
+                display_name="비즈월드",
+                title_column=9,
+                content_column=10,
+                completed_column=11,
+                credentials_section="bizwnews"
             )
         }
     )
