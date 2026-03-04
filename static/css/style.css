@@ -445,7 +445,7 @@ textarea:focus {
 }
 
 .category-chip input:checked + span {
-    color: var(--primary);
+    color: var(--color-primary);
     font-weight: 600;
 }
 
@@ -787,8 +787,8 @@ textarea:focus {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    background: var(--primary);
-    color: #fff;
+    background: var(--color-primary);
+    color: var(--color-secondary);
     padding: 3px 6px 3px 8px;
     border-radius: 12px;
     font-size: 12px;
@@ -806,7 +806,7 @@ textarea:focus {
 }
 
 .kw-tag button:hover {
-    color: #fff;
+    color: var(--color-secondary);
 }
 
 .kw-add-input {
