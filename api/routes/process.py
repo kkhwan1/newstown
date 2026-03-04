@@ -111,6 +111,22 @@ async def get_process_status(process_name: str, current_user: User = Depends(get
     )
 
 
+@router.post("/stop-all", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
+async def stop_all_processes(current_user: User = Depends(get_current_admin_user)):
+    """
+    Stop all processes
+
+    Stops all running processes. Admin privileges required.
+    Uses thread pool for subprocess operations.
+    """
+    process_manager = get_process_manager()
+    await asyncio.to_thread(process_manager.stop_all)
+
+    return {
+        "status": "all_stopped"
+    }
+
+
 @router.post("/{process_name}", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
 async def control_process(
     process_name: str,
@@ -228,17 +244,3 @@ async def get_process_logs(
     }
 
 
-@router.post("/stop-all", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
-async def stop_all_processes(current_user: User = Depends(get_current_admin_user)):
-    """
-    Stop all processes
-
-    Stops all running processes. Admin privileges required.
-    Uses thread pool for subprocess operations.
-    """
-    process_manager = get_process_manager()
-    await asyncio.to_thread(process_manager.stop_all)
-
-    return {
-        "status": "all_stopped"
-    }

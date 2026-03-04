@@ -274,13 +274,18 @@ def run_monitor(config):
                         }
 
                         # Get column mappings from platform config
-                        title_col = platform_config.get('title_column', title_col_idx)
-                        content_col = platform_config.get('content_column', content_col_idx)
-                        status_col = platform_config.get('completed_column', status_col_idx)
+                        # Config values are 1-based; convert to 0-based for array indexing.
+                        # Fallback values from enumerate() are already 0-based.
+                        raw_title = platform_config.get('title_column')
+                        raw_content = platform_config.get('content_column')
+                        raw_status = platform_config.get('completed_column')
+                        title_col = (raw_title - 1) if raw_title is not None else title_col_idx
+                        content_col = (raw_content - 1) if raw_content is not None else content_col_idx
+                        status_col = (raw_status - 1) if raw_status is not None else status_col_idx
 
-                        # Validate credentials
-                        if not platform_config_with_creds.get('golftimes_id') or not platform_config_with_creds.get('golftimes_pw'):
-                            log(f"[{platform_id}] 자격증정이 설정되지 않았습니다 (credentials_section: {credentials_section})", "WARN")
+                        # Validate credentials (generic keys work for all platforms)
+                        if not platform_config_with_creds.get('site_id') or not platform_config_with_creds.get('site_pw'):
+                            log(f"[{platform_id}] 자격증명이 설정되지 않았습니다 (credentials_section: {credentials_section})", "WARN")
                             continue
 
                         # Find rows ready for upload

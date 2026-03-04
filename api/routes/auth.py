@@ -48,7 +48,7 @@ async def login(request: LoginRequest, req: Request = None):
     Login endpoint
 
     Authenticates user with username and password, returns JWT token.
-    Default admin credentials: username=admin, password=admin (change on first login)
+    Default admin credentials: username=admin123, password=admin17730 (change on first login)
 
     Returns password_change_required=True if using default credentials.
     """
@@ -69,8 +69,8 @@ async def login(request: LoginRequest, req: Request = None):
 
     access_token = create_access_token(user.username)
 
-    # Check for default password (admin/admin)
-    password_change_required = (request.username == "admin" and request.password == "admin")
+    # Check for default password (admin123/admin17730 from init_db.py)
+    password_change_required = (request.username == "admin123" and request.password == "admin17730")
 
     # Audit log for successful login
     audit_log("login", user.username, {

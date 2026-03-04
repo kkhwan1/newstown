@@ -194,7 +194,7 @@ class ConfigManager:
         base_dir = Path(__file__).parent.parent
         self.config_path = base_dir / "config" / "dashboard_config.json"
         self._config: Dict[str, Any] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         self._load_env(base_dir)
         self._load()
@@ -414,16 +414,16 @@ class ConfigManager:
 
             self._config[section][key] = value
 
-        if save:
-            self._save_to_json()
+            if save:
+                self._save_to_json()
 
     def set_section(self, section: str, data: Dict[str, Any], save: bool = True, force: bool = True) -> bool:
         """섹션 전체 저장"""
         with self._lock:
             self._config[section] = copy.deepcopy(data)
 
-        if save:
-            return self._save_to_json()
+            if save:
+                return self._save_to_json()
         return True
 
     def get_all(self) -> Dict[str, Any]:

@@ -18,7 +18,7 @@ from utils.config_manager import get_config_manager
 
 router = APIRouter(prefix="/api/config", tags=["configuration"])
 
-SENSITIVE_SECTIONS = {'naver_api', 'golftimes', 'bizwnews', 'news_collection'}
+SENSITIVE_SECTIONS = {'naver_api', 'golftimes', 'bizwnews'}
 SENSITIVE_KEYS = {'client_id', 'client_secret', 'site_pw', 'naver_client_id', 'naver_client_secret'}
 
 
