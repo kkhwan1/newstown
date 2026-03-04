@@ -251,7 +251,8 @@ def main():
     setup_signal_handlers()
 
     config = load_config()
-    print(f"설정 로드됨: {json.dumps(config, ensure_ascii=False, indent=2)}")
+    safe_config = {k: v for k, v in config.items() if k not in ('site_pw', 'site_id', 'client_secret', 'client_id', 'naver_client_id', 'naver_client_secret')}
+    print(f"설정 로드됨: {json.dumps(safe_config, ensure_ascii=False, indent=2)}")
 
     if _shutdown_requested:
         print("종료 요청으로 실행 취소")

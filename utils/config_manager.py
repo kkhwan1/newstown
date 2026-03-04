@@ -260,12 +260,14 @@ class ConfigManager:
             self._save_to_json()
 
     def _save_to_json(self) -> bool:
-        """JSON 파일에 설정 저장"""
+        """JSON 파일에 설정 저장 (atomic write via temp file + os.replace)"""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with self._lock:
-                with open(self.config_path, 'w', encoding='utf-8') as f:
+                tmp_path = self.config_path.with_suffix('.tmp')
+                with open(tmp_path, 'w', encoding='utf-8') as f:
                     json.dump(self._config, f, ensure_ascii=False, indent=2)
+                os.replace(str(tmp_path), str(self.config_path))
             return True
         except Exception as e:
             print(f"⚠️ JSON 설정 저장 실패: {e}")

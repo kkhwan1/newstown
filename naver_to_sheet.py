@@ -2331,7 +2331,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                             time.sleep(wait_time)
                         elif "403" in error_msg or "permission" in error_msg.lower():
                             print(f"   [ERROR] 권한 오류! 서비스 계정에 시트 공유 필요")
-                            print(f"   [EMAIL] 이메일: storium@swift-radar-467217-p0.iam.gserviceaccount.com")
+                            print(f"   [EMAIL] credentials.json의 client_email을 시트에 공유하세요")
                             break
                         else:
                             wait_time = 10 * retry_count

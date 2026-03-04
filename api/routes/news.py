@@ -427,7 +427,7 @@ async def delete_all_news(
         if not all_news:
             return {"success": True, "deleted_count": 0}
 
-        row_numbers = [item["id"] for item in all_news]
+        row_numbers = [item["row_number"] for item in all_news]
         deleted = await asyncio.to_thread(
             sheet_client.delete_sheet_rows, sheet_url, row_numbers
         )

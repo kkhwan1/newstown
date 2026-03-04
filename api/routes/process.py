@@ -158,13 +158,7 @@ async def control_process(
 
         # Build config from request, unmasking any ***MASKED*** credentials
         config = request.config or {}
-        # DEBUG: Log incoming config
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Process {process_name} start config keys: {list(config.keys())}")
-        logger.info(f"Process {process_name} start config sample: {str(config)[:500]}")
         config = _unmask_config(config, process_name)
-        logger.info(f"After unmask config keys: {list(config.keys())}")
 
         # Convert to absolute path
         project_root = Path(__file__).parent.parent.parent

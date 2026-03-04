@@ -404,6 +404,10 @@ const DashboardHandler = {
 
     cleanup() {
         AppState.cleanupHandler(this.handlerName);
+        if (this._wsCallback) {
+            wsManager.off('message', this._wsCallback);
+            this._wsCallback = null;
+        }
         if (this.wsConnected) {
             wsManager.disconnect();
             this.wsConnected = false;
@@ -426,13 +430,12 @@ const DashboardHandler = {
 
             wsManager.connect();
             this.wsConnected = true;
-            wsManager.on('message', (data) => {
-                if (data.type === 'log') {
-                    this.updateLogContent(data.process, data.log);
-                } else if (data.type === 'status') {
+            this._wsCallback = (data) => {
+                if (data.type === 'status') {
                     this.updateProcessStatus(data.process, data.status);
                 }
-            });
+            };
+            wsManager.on('message', this._wsCallback);
 
             // FIX #4: Set initialized flag AFTER all async operations complete
             this.initialized = true;
@@ -693,7 +696,8 @@ const DashboardHandler = {
         const status = AppState.processStatus[process];
         try {
             if (status.running) {
-                await API.stopProcess(`${process}_monitor`);
+                const stopNameMap = { upload: 'upload_monitor', deletion: 'row_deletion', news: 'news_collection' };
+                await API.stopProcess(stopNameMap[process]);
                 Utils.showToast(`${process}가 중지되었습니다`, 'success');
             } else {
                 if (process === 'upload') {
@@ -765,11 +769,8 @@ const DashboardHandler = {
             // If upload_platforms not in config, fetch from /api/platforms
             if (!platforms || Object.keys(platforms).length === 0) {
                 try {
-                    const platformsResp = await fetch('/api/platforms');
-                    if (platformsResp.ok) {
-                        const data = await platformsResp.json();
-                        platforms = data.platforms || {};
-                    }
+                    const data = await API.getPlatforms();
+                    platforms = data.platforms || {};
                 } catch (error) {
                     console.error('Failed to load platforms:', error);
                 }
@@ -905,17 +906,6 @@ const DashboardHandler = {
                 await this.updateStatus();
             }
         }, 5000);
-    },
-
-    updateLogContent(process, log) {
-        const logId = process === 'upload_monitor' ? 'upload-log-content' :
-                     process === 'row_deletion' ? 'deletion-log-content' :
-                     'news-log-content';
-        const el = document.getElementById(logId);
-        if (el) {
-            el.textContent = log;
-            el.scrollTop = el.scrollHeight;
-        }
     },
 
     updateProcessStatus(process, status) {
@@ -1057,7 +1047,7 @@ const SearchHandler = {
         listenersToRemove.forEach(({ element, event, handler, options }) => {
             element.removeEventListener(event, handler, options);
             // Remove from tracked listeners
-            const index = listeners.indexOf({ element, event, handler, options });
+            const index = listeners.findIndex(l => l.element === element && l.event === event && l.handler === handler);
             if (index > -1) {
                 listeners.splice(index, 1);
             }
@@ -1271,6 +1261,19 @@ const NewsHandler = {
         }
     },
 
+    _createNewsRow(news) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${escapeHTML(String(news.id))}</td>
+            <td>${escapeHTML((news.title || '').substring(0, 50))}...</td>
+            <td>${escapeHTML(news.category || '-')}</td>
+            <td>${escapeHTML(news.search_keyword || '-')}</td>
+            <td>${Utils.formatDate(news.created_at)}</td>
+            <td><button class="btn btn-secondary" data-news-id="${escapeHTML(String(news.id))}">삭제</button></td>
+        `;
+        return tr;
+    },
+
     renderPendingNews(newsList) {
         const container = document.getElementById('pending-news-list');
 
@@ -1284,17 +1287,7 @@ const NewsHandler = {
         const fragment = document.createDocumentFragment();
 
         for (let i = 0; i < endIndex; i++) {
-            const news = newsList[i];
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${news.id}</td>
-                <td>${escapeHTML((news.title || '').substring(0, 50))}...</td>
-                <td>${escapeHTML(news.category || '-')}</td>
-                <td>${escapeHTML(news.search_keyword || '-')}</td>
-                <td>${Utils.formatDate(news.created_at)}</td>
-                <td><button class="btn btn-secondary" data-news-id="${news.id}">삭제</button></td>
-            `;
-            fragment.appendChild(tr);
+            fragment.appendChild(this._createNewsRow(newsList[i]));
         }
 
         const wrapper = document.createElement('div');
@@ -1357,17 +1350,7 @@ const NewsHandler = {
         const endIndex = Math.min(startIndex + this.ITEMS_PER_PAGE, this.allPendingNews.length);
 
         for (let i = startIndex; i < endIndex; i++) {
-            const news = this.allPendingNews[i];
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${news.id}</td>
-                <td>${escapeHTML((news.title || '').substring(0, 50))}...</td>
-                <td>${escapeHTML(news.category || '-')}</td>
-                <td>${escapeHTML(news.search_keyword || '-')}</td>
-                <td>${Utils.formatDate(news.created_at)}</td>
-                <td><button class="btn btn-secondary" data-news-id="${news.id}">삭제</button></td>
-            `;
-            fragment.appendChild(tr);
+            fragment.appendChild(this._createNewsRow(this.allPendingNews[i]));
         }
 
         tbody.appendChild(fragment);
@@ -1802,7 +1785,7 @@ const SettingsHandler = {
             const progress = Math.min(usagePercent / 100, 1);
 
             container.innerHTML = `
-                <p class="caption">날짜: ${usage.date || '-'}</p>
+                <p class="caption">날짜: ${escapeHTML(usage.date || '-')}</p>
                 <progress value="${progress}" max="1" style="width:100%"></progress>
                 <div class="stats-row">
                     <div class="metric-box">

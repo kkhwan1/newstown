@@ -37,7 +37,7 @@ class NewsCollectionConfig(BaseModel):
     )
     display_count: int = Field(default=30, ge=1, le=100, description="표시할 뉴스 개수")
     max_workers: int = Field(default=10, ge=1, le=50, description="최대 워커 수")
-    sort: str = Field(default="date", pattern="^(date|relevance)$", description="정렬 방식")
+    sort: str = Field(default="date", pattern="^(date|sim)$", description="정렬 방식")
 
     @field_validator("keywords")
     @classmethod

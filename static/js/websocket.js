@@ -229,6 +229,13 @@ class WebSocketManager {
                 headers: headers
             });
 
+            if (response.status === 401) {
+                this.stopPolling();
+                localStorage.removeItem('jwt_token');
+                window.location.href = '/dashboard#login';
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
