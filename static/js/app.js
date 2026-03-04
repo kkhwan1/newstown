@@ -711,6 +711,11 @@ const DashboardHandler = {
                     config.sheet_url = fullConfig.google_sheet?.url || '';
                     config.golftimes = fullConfig.golftimes || {};
                     console.log('[DEBUG] Upload config:', { selected, platformsKeys: Object.keys(platforms), sheet_url: !!config.sheet_url });
+                    // 업로드 시작 전 시트 동기화 확인
+                    try {
+                        const syncResp = await API.getSyncStatus();
+                        Utils.showToast(`시트 동기화: ${syncResp.sheet_count}행 확인`, 'info');
+                    } catch(e) { /* 동기화 실패해도 업로드 진행 */ }
                     await API.startProcess('upload_monitor', config);
                 } else if (process === 'deletion') {
                     const fullDelConfig = await API.getConfig();
