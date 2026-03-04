@@ -61,7 +61,7 @@ async def get_platforms(current_user: User = Depends(get_current_user)):
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def add_platform(
     request: AddPlatformRequest,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Add a new upload platform (admin only)
@@ -103,7 +103,7 @@ async def add_platform(
 async def update_platform(
     platform_id: str,
     request: UpdatePlatformRequest,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update platform configuration (admin only)
@@ -143,7 +143,7 @@ async def update_platform(
 @router.delete("/{platform_id}", status_code=status.HTTP_200_OK)
 async def remove_platform(
     platform_id: str,
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Remove an upload platform (admin only)

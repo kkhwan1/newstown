@@ -112,7 +112,7 @@ async def get_process_status(process_name: str, current_user: User = Depends(get
 
 
 @router.post("/stop-all", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
-async def stop_all_processes(current_user: User = Depends(get_current_admin_user)):
+async def stop_all_processes(current_user: User = Depends(get_current_user)):
     """
     Stop all processes
 
@@ -131,7 +131,7 @@ async def stop_all_processes(current_user: User = Depends(get_current_admin_user
 async def control_process(
     process_name: str,
     request: ProcessActionRequest,
-    current_user: User = Depends(get_current_admin_user)  # Admin only
+    current_user: User = Depends(get_current_user)
 ):
     """
     Control process (start/stop)
