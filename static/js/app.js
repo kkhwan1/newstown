@@ -540,7 +540,7 @@ const DashboardHandler = {
             }
         );
 
-        // Save keywords (키워드 저장)
+        // Save keywords (키워드 저장) - reads from tag chips
         const saveKeywordsBtn = document.getElementById('save-keywords-btn');
         if (saveKeywordsBtn) {
             AppState.trackListener(
@@ -548,27 +548,8 @@ const DashboardHandler = {
                 saveKeywordsBtn,
                 'click',
                 async () => {
-                    const keywordInputs = document.querySelectorAll('.keyword-input');
-                    const categoryKeywords = {};
-
-                    keywordInputs.forEach(input => {
-                        const category = input.dataset.category;
-                        const type = input.dataset.type;
-                        const values = input.value.split(',').map(v => v.trim()).filter(v => v);
-
-                        if (!categoryKeywords[category]) {
-                            categoryKeywords[category] = { core: [], general: [] };
-                        }
-                        categoryKeywords[category][type] = values;
-                    });
-
-                    try {
-                        await API.updateConfig('category_keywords', categoryKeywords);
-                        Utils.showToast('키워드 설정이 저장되었습니다', 'success');
-                    } catch (error) {
-                        console.error('키워드 저장 실패:', error);
-                        Utils.showToast(error.message || '키워드 저장에 실패했습니다', 'error');
-                    }
+                    await SettingsHandler._autoSaveKeywords();
+                    Utils.showToast('키워드 설정이 저장되었습니다', 'success');
                 }
             );
         }
@@ -1776,39 +1757,78 @@ const SettingsHandler = {
     },
 
     renderKeywords(categoryKeywords) {
-        // Dashboard page 내의 keyword-settings 요소 찾기
         const container = document.getElementById('keyword-settings');
         if (!container) return;
 
-        // If empty, use default categories so users can add keywords
         const defaultCategories = { '연애': { core: [], general: [] }, '경제': { core: [], general: [] }, '스포츠': { core: [], general: [] } };
         const keywordsToRender = Object.keys(categoryKeywords).length > 0 ? categoryKeywords : defaultCategories;
 
+        const renderTags = (keywords, category, type) => {
+            const tags = (keywords || []).map(kw =>
+                `<span class="kw-tag" data-category="${escapeHTML(category)}" data-type="${escapeHTML(type)}">${escapeHTML(kw)}<button type="button" title="삭제">&times;</button></span>`
+            ).join('');
+            return `<div class="kw-tags-wrap" data-category="${escapeHTML(category)}" data-type="${escapeHTML(type)}">
+                ${tags}<input type="text" class="kw-add-input" data-category="${escapeHTML(category)}" data-type="${escapeHTML(type)}" placeholder="추가 입력 후 Enter">
+            </div>`;
+        };
+
         container.innerHTML = Object.entries(keywordsToRender).map(([category, keywords]) => `
-            <div class="keyword-category-block" style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
-                <h4 style="margin-bottom: 10px;">${escapeHTML(this._getCategoryDisplayName(category))}</h4>
-                <div style="margin-bottom: 10px;">
-                    <label style="display:block; margin-bottom:5px;">핵심 키워드 (쉼표로 구분):</label>
-                    <input type="text"
-                           class="keyword-input"
-                           data-category="${escapeHTML(category)}"
-                           data-type="core"
-                           value="${escapeHTML(keywords.core ? keywords.core.join(', ') : '')}"
-                           style="width: 100%; padding: 8px; box-sizing: border-box;"
-                           placeholder="예: 연애, 열애, 커플">
+            <div class="keyword-category-block">
+                <h4>${escapeHTML(this._getCategoryDisplayName(category))}</h4>
+                <div class="kw-section">
+                    <label>핵심</label>
+                    ${renderTags(keywords.core, category, 'core')}
                 </div>
-                <div>
-                    <label style="display:block; margin-bottom:5px;">일반 키워드 (쉼표로 구분):</label>
-                    <input type="text"
-                           class="keyword-input"
-                           data-category="${escapeHTML(category)}"
-                           data-type="general"
-                           value="${escapeHTML(keywords.general ? keywords.general.join(', ') : '')}"
-                           style="width: 100%; padding: 8px; box-sizing: border-box;"
-                           placeholder="예: 신랑, 신부, 웨딩">
+                <div class="kw-section">
+                    <label>일반</label>
+                    ${renderTags(keywords.general, category, 'general')}
                 </div>
             </div>
         `).join('');
+
+        // Event delegation for tag add/remove
+        container.addEventListener('click', (e) => {
+            const btn = e.target.closest('.kw-tag button');
+            if (btn) {
+                btn.parentElement.remove();
+                this._autoSaveKeywords();
+            }
+        });
+        container.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.target.classList.contains('kw-add-input')) {
+                e.preventDefault();
+                const val = e.target.value.trim();
+                if (!val) return;
+                const wrap = e.target.closest('.kw-tags-wrap');
+                const cat = e.target.dataset.category;
+                const type = e.target.dataset.type;
+                const tag = document.createElement('span');
+                tag.className = 'kw-tag';
+                tag.dataset.category = cat;
+                tag.dataset.type = type;
+                tag.innerHTML = `${escapeHTML(val)}<button type="button" title="삭제">&times;</button>`;
+                wrap.insertBefore(tag, e.target);
+                e.target.value = '';
+                this._autoSaveKeywords();
+            }
+        });
+    },
+
+    async _autoSaveKeywords() {
+        const categoryKeywords = {};
+        document.querySelectorAll('.kw-tag').forEach(tag => {
+            const cat = tag.dataset.category;
+            const type = tag.dataset.type;
+            if (!categoryKeywords[cat]) categoryKeywords[cat] = { core: [], general: [] };
+            const text = tag.textContent.replace('×', '').trim();
+            if (text) categoryKeywords[cat][type].push(text);
+        });
+        try {
+            await API.updateConfig('category_keywords', categoryKeywords);
+            Utils.clearCache();
+        } catch (error) {
+            Utils.showToast(error.message || '키워드 저장 실패', 'error');
+        }
     },
 
     _getCategoryDisplayName(category) {
