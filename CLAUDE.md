@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Korean news automation: Naver API → Google Sheets → Golf Times auto-upload. FastAPI backend + HTML/JS SPA dashboard.
+Korean news automation: Naver API → Google Sheets → multi-platform auto-upload (Golf Times, Bizwnews). FastAPI backend + HTML/JS SPA dashboard.
 
 **Production**: `root@129.212.236.253` (port 8001)
 **Dashboard**: `https://candidate-keith-leo-original.trycloudflare.com/dashboard` (Cloudflare Tunnel)
@@ -16,7 +16,7 @@ python run_api.py                           # API + Dashboard (default port 8002
 python scripts/run_news_collection.py       # News collection (dashboard spawns this)
 python scripts/run_upload_monitor.py        # Upload monitor
 python scripts/run_row_deletion.py          # Row deletion
-python init_db.py                           # First-time setup (config files + admin/admin user)
+python init_db.py                           # First-time setup (config files + admin123/admin17730 user)
 # API docs: http://localhost:{API_PORT}/docs
 ```
 
@@ -29,44 +29,47 @@ naver_to_sheet.py → Naver API → Google Sheets (A-D)
                                      ↓
                      Make.com fills E-G (AI-generated title/content)
                                      ↓
-                Upload monitor reads F/G → GolftimesUploader → Golf Times → marks H '완료'
+        Upload monitor reads columns per platform → Uploader → Platform site → marks completed column '완료'
+                                     ↓
+        Row deletion checks ALL platform completed columns → deletes row when all are '완료'
 ```
 
-**Sheet columns** (1-indexed for gspread): A=제목, B=본문, C=링크, D=카테고리 | E=AI_제목, F=AI_본문 (Make.com fills) | H=완료 marker | J=platform_title(10), K=platform_content(11), L=platform_completed(12) for golftimes.
+**Sheet columns** (1-indexed for gspread): A=제목, B=본문, C=링크, D=카테고리 | E=AI_제목, F=AI_본문 (Make.com fills) | H=golftimes 완료 | L=bizwnews 완료. Platform-specific columns configured in `upload_platforms` config.
 
 **No database** — JSON files (`config/`) + Google Sheets only.
 
 **Process management**: `ProcessManager` spawns `scripts/run_*.py` via subprocess. Config passed as `PROCESS_CONFIG` env var (JSON).
 
-**API**: All REST under `/api/`. WebSocket at `/ws/logs?token=JWT`. SPA at `/dashboard`, root `/` is health check. Routes in `api/routes/`: auth, config, process, news, sync, logs, admin, platforms, usage.
+**API**: All REST under `/api/`. WebSocket at `/ws/logs?token=JWT`. SPA at `/dashboard`, root `/` is health check. Routes in `api/routes/`: auth, config, process, news, sync, logs, admin, platforms, usage. Note: `/stop-all` route must be declared before `/{process_name}` wildcard in `process.py`.
 
-**Auth**: JWT (HMAC-SHA256), bcrypt passwords in `config/users.json`. Roles: `admin`/`user`. Default: `admin123/admin17730`. `user` role hides Naver API settings, user management, and API usage in the settings page. Rate limit: 5/60s on login.
+**Auth**: JWT (HMAC-SHA256), bcrypt passwords in `config/users.json`. Roles: `admin`/`user`. Default: `admin123/admin17730`. `user` role hides Naver API settings, user management, and API usage in the settings page. Rate limit: 5/60s on login (in-memory, per-worker).
 
 **Frontend SPA**: `dashboard.html` + `static/js/`. `app.js` (routing, state in `AppState`, page renderers), `api.js` (REST client with auto-401 logout), `websocket.js` (WS for real-time logs, auto-switches to HTTP polling at `/api/logs?since=ts` after 5 failed reconnects). XSS protected via `escapeHTML()`.
 
-## Critical: Credential Masking Flow
-
-API masks sensitive fields as `***MASKED***` → frontend sends them back → `process.py::_unmask_config()` restores top-level keys only → **subprocess scripts must detect remaining `***MASKED***` and reload from ConfigManager**. Pattern in `run_upload_monitor.py` and `run_news_collection.py`.
-
 ## Critical: Column Index Convention
 
-Platform config values (`title_column=10`, `content_column=11`, `completed_column=12`) in `config_schema.py` are **1-based** (`ge=1`). `upload_monitor.completed_column=8` (H column, 1-based). However, `run_upload_monitor.py` auto-detects columns via `enumerate()` (0-based) as fallback. Code uses `sheet.update_cell(row, col+1, value)` — **verify whether platform_config values need the +1 or not** when modifying column logic. Array access from `sheet.get_all_values()` is always 0-based (`row[0]`=A).
+Platform config values (`title_column`, `content_column`, `completed_column`) in `config_schema.py` are **1-based** (`ge=1`). `run_upload_monitor.py` converts these to **0-based** on read (`raw_value - 1`) for array access. The `enumerate()` header-detection fallback is already 0-based. `sheet.update_cell(row, col, value)` expects 1-based — so when writing back, add 1 to 0-based indices. Array access from `sheet.get_all_values()` is always 0-based (`row[0]`=A).
+
+## Critical: Credential Masking Flow
+
+API masks sensitive fields as `***MASKED***` → frontend sends them back → `process.py::_unmask_config()` restores top-level keys only → **subprocess scripts must detect remaining `***MASKED***` and reload from ConfigManager**. Pattern in `run_upload_monitor.py` and `run_news_collection.py`. Applies to all platform credentials (golftimes, bizwnews).
 
 ## Critical: Async + Thread Safety
 
 - Use `asyncio.to_thread()` for blocking I/O in async routes (gspread, file I/O)
+- `ConfigManager` uses `RLock` (reentrant) — `set()`/`set_section()` hold lock through `_save_to_json()` for atomic updates
 - `sheet_client.py`: `RLock` protects TTL cache; pad rows with `row + [""]*(n)` (new list, don't mutate cache)
 - Always `ensure_ascii=False` for JSON dumps; subprocess env sets `PYTHONIOENCODING=utf-8`
 
 ## Key APIs
 
 ```python
-# ConfigManager
+# ConfigManager (singleton, thread-safe with RLock)
 cm = get_config_manager()
 cm.get("news_collection", "display_count", default=30)
 cm.get_news_config()      # Full config with sheet_url, naver keys, category_keywords
 cm.get_upload_config()    # Upload config with sheet_url
-cm.get_deletion_config()  # Deletion config with sheet_url, completed_column
+cm.get_deletion_config()  # Deletion config with sheet_url, completed_columns
 
 # ProcessManager
 pm = ProcessManager()
@@ -77,13 +80,17 @@ pm.start_process("news_collection", "scripts/run_news_collection.py", config={..
 
 ## Config Sections (`dashboard_config.json`)
 
-`news_collection` (keywords, display_count, sort) | `category_keywords` ({category}.core[], .general[]) | `upload_monitor` (check_interval, completed_column, concurrent_uploads) | `row_deletion` (delete_interval, max_delete_count) | `google_sheet` (url) | `naver_api` (client_id, client_secret) | `golftimes` (site_id, site_pw) | `upload_platforms` ({name}.enabled/title_column/content_column/completed_column/credentials_section) | `news_schedule` (enabled, interval_hours). Pydantic schemas in `utils/config_schema.py`. Env vars override JSON via `ConfigManager._apply_env_overrides()`.
+`news_collection` (keywords, display_count, sort) | `category_keywords` ({category}.core[], .general[]) | `upload_monitor` (check_interval, completed_column, concurrent_uploads) | `row_deletion` (delete_interval, max_delete_count) | `google_sheet` (url) | `make_scenario` (url) | `naver_api` (client_id, client_secret) | `golftimes` (site_id, site_pw) | `bizwnews` (site_id, site_pw) | `upload_platforms` ({name}.enabled/title_column/content_column/completed_column/credentials_section) | `news_schedule` (enabled, interval_hours). Pydantic schemas in `utils/config_schema.py`. Env vars override JSON via `ConfigManager._apply_env_overrides()`.
 
-## Golf Times Upload
+## Platform Upload
 
-Two modes via `config.extra_params.mode`: `user` (default) / `admin`. Form inputs have no `name` attrs — use XPath. Content via `CKEDITOR.instances['FCKeditor1'].setData(html)`. Section: `S1N5`/`S2N28`.
+Two platforms sharing same CMS (different sites): **Golf Times** (`golftimes.py`, sections S1N5/S2N28) and **Bizwnews** (`bizwnews.py`, sections S1N2/S2N26). Both use Selenium + XPath (no `name` attrs on form inputs). Content via `CKEDITOR.instances['FCKeditor1'].setData(html)`.
 
-**Platform factory**: To add a platform: (1) Create `utils/platforms/newname.py` inheriting `PlatformUploader` from `base.py`, (2) Implement `login()`, `upload(title, content, category)`, `from_config()`, (3) Register in `__init__.py::platform_map`, (4) Add credentials section + `PlatformConfig` entry in config.
+Golftimes has two modes via `config.extra_params.mode`: `user` (default) / `admin`. Bizwnews preserves CKEditor header (`[비즈월드]`) and footer (`[비즈월드=reporter]`) during content insertion.
+
+**Row deletion**: `run_row_deletion.py` checks `COMPLETED_COLUMNS = [8, 12]` (H + L columns). Rows are deleted only when **all** platform completed columns contain "완료".
+
+**Platform factory**: To add a platform: (1) Create `utils/platforms/newname.py` inheriting `PlatformUploader` from `base.py`, (2) Implement `login()`, `upload(title, content, category)`, `from_config()`, (3) Register in `__init__.py::platform_map`, (4) Add credentials section + `PlatformConfig` entry in config. `DriverPool` in `__init__.py` provides Chrome WebDriver pooling for concurrent uploads.
 
 ## Naver API Gotcha
 
@@ -92,9 +99,12 @@ Naver returns `description` not `content`. `api.js::saveNews()` maps `item.descr
 ## Required Files (not in git)
 
 - `credentials.json` — Google Service Account key
+- `config/dashboard_config.json` — runtime config (contains credentials, excluded from git)
+- `config/users.json` — user accounts (excluded from git)
 - `.env` — copy from `.env.example`
 
 ## Deployment
 
 - **Docker**: `python:3.11-slim`, port 8080, `entrypoint.sh` decodes `GOOGLE_CREDENTIALS_BASE64`
 - **DigitalOcean**: `.do/app.yaml`, `professional-s` instance
+- **Production server**: SSH `root@129.212.236.253`, project at `/root/tynewsauto`, managed by systemd (`systemctl restart tynewsauto`). Deploy: `git pull && systemctl restart tynewsauto`.

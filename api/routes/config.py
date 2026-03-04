@@ -55,13 +55,12 @@ async def get_config(current_user: User = Depends(get_current_user)):
 @router.post("", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
 async def update_config(
     request: ConfigUpdate,
-    current_user: User = Depends(get_current_admin_user)  # Admin only
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update configuration section
 
     Updates a specific configuration section with validation.
-    Admin privileges required.
     """
     config_manager = get_config_manager()
     section = request.section
@@ -152,13 +151,12 @@ async def update_config_key(
     section: str,
     key: str,
     request: Dict[str, Any],
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update a single configuration key within a section
 
     Updates a specific key in a configuration section.
-    Admin privileges required.
     """
     config_manager = get_config_manager()
     value = request.get("value")
@@ -172,13 +170,12 @@ async def update_config_key(
 async def update_config_section(
     section: str,
     data: Dict[str, Any],
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Update an entire configuration section
 
     Replaces all data in a configuration section.
-    Admin privileges required.
     """
     config_manager = get_config_manager()
 
@@ -200,7 +197,7 @@ async def update_config_section(
 @router.post("/naver-api/file", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
 async def save_naver_api_to_file(
     request: Dict[str, Any],
-    current_user: User = Depends(get_current_admin_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Save Naver API credentials directly to config/naver_api.json file
