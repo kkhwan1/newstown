@@ -734,9 +734,13 @@ def scrape_news_content(url):
         # 방법 5: <section> 태그 중 본문으로 보이는 것
         sections = soup.find_all('section')
         for section in sections:
+            # decompose된 요소 안전 처리 (attrs가 None이면 skip)
+            if not hasattr(section, 'attrs') or section.attrs is None:
+                continue
             # 본문 관련 클래스/ID가 있는 section만
-            if section.get('class') and any(re.search(r'article|content|body|story|news', str(c), re.I) 
-                                             for c in section.get('class', [])):
+            section_class = section.get('class')
+            if section_class and any(re.search(r'article|content|body|story|news', str(c), re.I)
+                                             for c in section_class):
                 clean_element(section)
                 text = section.get_text(separator='\n', strip=True)
                 if text and len(text) > 200:
@@ -751,7 +755,7 @@ def scrape_news_content(url):
                 # 부모가 article, main, content 관련이면 우선
                 parent = p.parent
                 is_in_content = False
-                if parent:
+                if parent and hasattr(parent, 'attrs') and parent.attrs is not None:
                     parent_class = ' '.join(parent.get('class', []))
                     parent_id = parent.get('id', '')
                     if re.search(r'article|content|body|story|news', parent_class + parent_id, re.I):
@@ -775,6 +779,9 @@ def scrape_news_content(url):
             best_length = 0
             
             for div in all_divs:
+                # decompose된 요소 안전 처리
+                if not hasattr(div, 'attrs') or div.attrs is None:
+                    continue
                 # 불필요한 클래스/ID 제외
                 div_class = ' '.join(div.get('class', []))
                 div_id = div.get('id', '')
