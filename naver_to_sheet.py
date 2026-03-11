@@ -89,7 +89,7 @@ class NewsCollectorConfig:
     display_count: int = 70
 
     # 정렬 옵션 ('sim': 인기순, 'date': 최신순)
-    sort: str = 'sim'
+    sort: str = 'date'
 
     # 카테고리 필터 (None이면 모든 뉴스 수집 후 자동 분류)
     category_filter: Optional[str] = None
@@ -259,7 +259,7 @@ def load_config_from_dashboard() -> NewsCollectorConfig:
                 keyword_category_map=keyword_category_map,
                 category_keywords=category_keywords,
                 display_count=data.get('news_collection', {}).get('display_count', 70),
-                sort=data.get('news_collection', {}).get('sort', 'sim'),
+                sort=data.get('news_collection', {}).get('sort', 'date'),
                 category_filter=None,
                 skip_mismatched_category=False,
                 enable_economy_category=True
@@ -301,7 +301,7 @@ def get_default_config() -> NewsCollectorConfig:
         keyword_category_map=keyword_category_map,
         category_keywords=get_default_category_keywords(),
         display_count=70,
-        sort='sim',
+        sort='date',
         category_filter=None,
         skip_mismatched_category=False,
         enable_economy_category=True
@@ -359,7 +359,7 @@ SKIP_MISMATCHED_CATEGORY = False
 ENABLE_ECONOMY_CATEGORY = True
 
 # 9. 정렬 옵션 (레거시)
-SORT_OPTION = 'sim'
+SORT_OPTION = 'date'
 
 # 10. 카테고리별 수집 제한 (레거시)
 CATEGORY_LIMITS = {
@@ -456,7 +456,7 @@ ENABLE_ECONOMY_CATEGORY = True   # True: 경제 뉴스도 수집
                                   # False: 연애/스포츠만 수집 (기존 동작)
 
 # 9. 정렬 옵션
-SORT_OPTION = 'sim'  # 'sim': 인기순(관련도순), 'date': 최신순
+SORT_OPTION = 'date'  # 'sim': 인기순(관련도순), 'date': 최신순
 
 # 10. 카테고리별 수집 제한 (실제 저장할 개수)
 CATEGORY_LIMITS = {
@@ -1569,7 +1569,7 @@ def calculate_similarity(text1, text2):
 def is_today_news(pub_date_str):
     """발행일이 오늘인지 확인 (네이버 API pubDate 형식: 'Fri, 05 Dec 2025 10:30:00 +0900')"""
     if not pub_date_str:
-        return True  # pubDate 없으면 포함
+        return False  # pubDate 없으면 날짜 확인 불가 → 제외
     try:
         pub_date = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %z')
         today = datetime.now(timezone.utc).astimezone().date()
@@ -1659,8 +1659,8 @@ def is_same_topic(title1, content1, title2, content2):
     
     return False
 
-def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None, threshold=0.40):
-    """DB 제목/본문과 유사도 40% 이상이면 중복 판정 (더 엄격). (중복여부, 유사도, 매칭제목) 반환"""
+def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None, threshold=0.50):
+    """제목/본문 유사도 50% 이상이면 중복 판정. (중복여부, 유사도, 매칭제목) 반환"""
     if not db_titles:
         return (False, 0.0, None)
     
@@ -1675,14 +1675,14 @@ def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None,
         if ratio >= threshold:
             return (True, ratio, title)
         
-        # 2. 핵심 키워드 중복률 체크 (50% 이상 키워드 겹치면 중복)
+        # 2. 핵심 키워드 중복률 체크 (40% 이상 키워드 겹치면 중복)
         existing_key_phrases = extract_key_phrases(title)
         if new_key_phrases and existing_key_phrases:
             common = new_key_phrases.intersection(existing_key_phrases)
             smaller_set = min(len(new_key_phrases), len(existing_key_phrases))
             if smaller_set > 0:
                 keyword_overlap = len(common) / smaller_set
-                if keyword_overlap >= 0.5:
+                if keyword_overlap >= 0.40:
                     return (True, keyword_overlap, title)
         
         # 3. 고유명사 기반 같은 주제 체크
@@ -1780,16 +1780,16 @@ def check_duplicate_in_cache(existing_data, link, title=None, content=None):
         new_phrases = extract_key_phrases(title)
         for i, (existing_title, normalized_existing_title) in enumerate(zip(existing_data['titles'], existing_data['normalized_titles'])):
             similarity = calculate_similarity(normalized_new_title, normalized_existing_title)
-            # 유사도가 0.40 이상이면 중복으로 간주 (더 엄격)
-            if similarity >= 0.40:
+            # 유사도가 0.30 이상이면 중복으로 간주
+            if similarity >= 0.30:
                 return True
             
-            # 핵심 키워드 중복률 체크 (50% 이상이면 중복)
+            # 핵심 키워드 중복률 체크 (40% 이상이면 중복)
             existing_phrases = extract_key_phrases(existing_title)
             if new_phrases and existing_phrases:
                 common = new_phrases.intersection(existing_phrases)
                 smaller = min(len(new_phrases), len(existing_phrases))
-                if smaller > 0 and len(common) / smaller >= 0.5:
+                if smaller > 0 and len(common) / smaller >= 0.40:
                     return True
             
             # 고유명사 기반 같은 주제 체크
@@ -1883,9 +1883,9 @@ def main(config: Optional[NewsCollectorConfig] = None):
     # 실제 목표 개수 (config.category_limits 기준)
     target_count = sum(config.category_limits.values())
 
-    # DB에서 기존 제목들 로드 (중복 체크용)
-    db_titles = get_db_titles()
-    print(f"\n[DB] 기존 DB 뉴스 {len(db_titles)}개 로드 완료")
+    # 시트 기존 제목으로 중복 체크 (제목 유사도 비교용)
+    existing_titles = existing_news_data.get('titles', [])
+    print(f"\n[시트] 기존 뉴스 제목 {len(existing_titles)}개 로드 완료 (제목 유사도 체크용)")
 
     # 배치 내 수집된 제목들 (같은 배치 내 중복 체크용)
     batch_collected_titles = []
@@ -1899,63 +1899,83 @@ def main(config: Optional[NewsCollectorConfig] = None):
     random.shuffle(keyword_list)
     print(f"   [RANDOM] 키워드 순서 랜덤 셔플 완료 ({len(keyword_list)}개)")
 
-    # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
-    for keyword, search_count in keyword_list:
-        category = config.keyword_category_map.get(keyword, None)
-        if not category or category not in config.category_limits:
-            continue
+    # 최대 3라운드 반복하여 목표 개수 채우기
+    MAX_ROUNDS = 3
+    for round_num in range(MAX_ROUNDS):
+        # 모든 카테고리가 채워졌으면 종료
+        all_filled = all(
+            len(category_collected[cat]) >= config.category_limits.get(cat, 0)
+            for cat in category_collected
+        )
+        if all_filled:
+            break
 
-        cat_limit = config.category_limits.get(category, 0)
-        if cat_limit <= 0 or len(category_collected[category]) >= cat_limit:
-            continue
+        if round_num > 0:
+            random.shuffle(keyword_list)
+            unfilled = [f"{cat}({len(category_collected[cat])}/{config.category_limits.get(cat, 0)})"
+                        for cat in category_collected
+                        if len(category_collected[cat]) < config.category_limits.get(cat, 0)]
+            print(f"\n[RETRY] 라운드 {round_num + 1}: 목표 미달 카테고리 추가 검색 [{', '.join(unfilled)}]")
 
-        print(f"   '{keyword}' 검색 중 (카테고리: {category}, 현재: {len(category_collected[category])}/{cat_limit}개)")
-        news_result = get_naver_news(keyword, display=min(search_count, 50), sort=config.sort, config=config)
-        
-        if news_result and 'items' in news_result:
-            for item in news_result['items']:
-                if len(category_collected[category]) >= cat_limit:
-                    break
-                    
-                link = item.get('link', '').strip()
-                title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                pub_date = item.get('pubDate', '')
-                
-                if not is_today_news(pub_date):
-                    continue
-                
-                if link in all_news_links:
-                    continue
-                
-                if check_duplicate_in_cache(existing_news_data, link, title):
-                    continue
-                
-                # DB 기존 뉴스와 중복 체크
-                is_db_dup, sim_ratio, matched_title = is_duplicate_in_db(title, db_titles)
-                if is_db_dup:
-                    print(f"      [DB중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
-                    continue
-                
-                # 같은 배치 내 수집된 뉴스와 중복 체크 (핵심!)
-                is_batch_dup, batch_sim, batch_matched = is_duplicate_in_db(title, batch_collected_titles)
-                if is_batch_dup:
-                    print(f"      [배치중복] {title[:30]}... (유사도 {batch_sim:.0%})")
-                    continue
-                
-                # 카테고리별 제외 키워드 체크 (강화된 필터링)
-                description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                if is_news_excluded(title, description, category):
-                    print(f"      [제외] {title[:30]}... (카테고리 제외 키워드 매칭)")
-                    continue
-                
-                item['_search_keyword'] = keyword
-                item['_category'] = category
-                category_collected[category].append(item)
-                all_news_links.add(link)
-                batch_collected_titles.append(title)  # 배치 목록에 추가
-                print(f"      [신규] {title[:40]}...")
-        
-        time.sleep(0.5)
+        # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
+        for keyword, search_count in keyword_list:
+            category = config.keyword_category_map.get(keyword, None)
+            if not category or category not in config.category_limits:
+                continue
+
+            cat_limit = config.category_limits.get(category, 0)
+            if cat_limit <= 0 or len(category_collected[category]) >= cat_limit:
+                continue
+
+            # 라운드가 올라갈수록 더 많은 결과를 가져와서 비중복 뉴스를 찾을 확률 높임
+            fetch_count = min(search_count * (round_num + 1), 100)
+            print(f"   '{keyword}' 검색 중 (카테고리: {category}, 현재: {len(category_collected[category])}/{cat_limit}개, display={fetch_count})")
+            news_result = get_naver_news(keyword, display=fetch_count, sort=config.sort, config=config)
+
+            if news_result and 'items' in news_result:
+                for item in news_result['items']:
+                    if len(category_collected[category]) >= cat_limit:
+                        break
+
+                    link = item.get('link', '').strip()
+                    title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                    pub_date = item.get('pubDate', '')
+
+                    if not is_today_news(pub_date):
+                        continue
+
+                    if link in all_news_links:
+                        continue
+
+                    if check_duplicate_in_cache(existing_news_data, link, title):
+                        continue
+
+                    # 시트 기존 뉴스와 중복 체크
+                    is_sheet_dup, sim_ratio, matched_title = is_duplicate_in_db(title, existing_titles)
+                    if is_sheet_dup:
+                        print(f"      [시트중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
+                        continue
+
+                    # 같은 배치 내 수집된 뉴스와 중복 체크 (핵심!)
+                    is_batch_dup, batch_sim, batch_matched = is_duplicate_in_db(title, batch_collected_titles)
+                    if is_batch_dup:
+                        print(f"      [배치중복] {title[:30]}... (유사도 {batch_sim:.0%})")
+                        continue
+
+                    # 카테고리별 제외 키워드 체크 (강화된 필터링)
+                    description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                    if is_news_excluded(title, description, category):
+                        print(f"      [제외] {title[:30]}... (카테고리 제외 키워드 매칭)")
+                        continue
+
+                    item['_search_keyword'] = keyword
+                    item['_category'] = category
+                    category_collected[category].append(item)
+                    all_news_links.add(link)
+                    batch_collected_titles.append(title)  # 배치 목록에 추가
+                    print(f"      [신규] {title[:40]}...")
+
+            time.sleep(0.5)
     
     # 카테고리별 수집 결과 출력
     all_news_items = []
@@ -2085,11 +2105,16 @@ def main(config: Optional[NewsCollectorConfig] = None):
                         for item in news_result['items']:
                             if len(valid_items) >= target_count:
                                 break
-                            
+
+                            # 오늘 뉴스인지 확인
+                            pub_date = item.get('pubDate', '')
+                            if not is_today_news(pub_date):
+                                continue
+
                             link = item.get('link', '').strip()
                             title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
                             description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                            
+
                             # 이미 valid_items에 있는지 확인
                             if any(v['link'] == link for v in valid_items):
                                 continue
@@ -2099,8 +2124,8 @@ def main(config: Optional[NewsCollectorConfig] = None):
                                 continue
                             
                             # DB 중복 체크
-                            is_db_dup, _, _ = is_duplicate_in_db(title, db_titles)
-                            if is_db_dup:
+                            is_sheet_dup, _, _ = is_duplicate_in_db(title, existing_titles)
+                            if is_sheet_dup:
                                 continue
                             
                             # 배치 내 중복 체크

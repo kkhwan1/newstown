@@ -161,7 +161,7 @@ def create_collector_config(config):
         keyword_category_map=keyword_map if keyword_map else {"연애": "연애", "스포츠": "스포츠"},
         category_keywords=category_keywords if category_keywords else default_category_keywords,
         display_count=config.get('display_count', 70),
-        sort=config.get('sort', 'sim'),
+        sort=config.get('sort', 'date'),
         category_filter=None,
         skip_mismatched_category=False,
         enable_economy_category=True
