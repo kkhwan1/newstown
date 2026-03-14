@@ -1666,8 +1666,8 @@ def is_same_topic(title1, content1, title2, content2):
     
     return False
 
-def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None, threshold=0.50):
-    """제목/본문 유사도 50% 이상이면 중복 판정. (중복여부, 유사도, 매칭제목) 반환"""
+def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None, threshold=0.35):
+    """제목/본문 유사도 35% 이상이면 중복 판정. (중복여부, 유사도, 매칭제목) 반환"""
     if not db_titles:
         return (False, 0.0, None)
     
@@ -1697,13 +1697,13 @@ def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None,
         if is_same_topic(new_title, new_content, title, existing_content):
             return (True, 0.5, title)
         
-        # 4. 본문 유사도 체크 (50% 이상이면 중복)
+        # 4. 본문 유사도 체크 (40% 이상이면 중복)
         if new_content and existing_content:
             content_similarity = calculate_similarity(
                 normalize_text(new_content[:500]),  # 앞부분 500자만 비교 (성능)
                 normalize_text(existing_content[:500])
             )
-            if content_similarity >= 0.5:
+            if content_similarity >= 0.40:
                 return (True, content_similarity, title)
     
     return (False, 0.0, None)
