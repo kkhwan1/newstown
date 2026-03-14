@@ -23,6 +23,7 @@ from api.schemas.news import NewsListResponse, NewsItem, NewsStatsResponse
 from api.dependencies.auth import User, get_current_user, get_current_admin_user
 from utils import sheet_client
 from utils.config_manager import get_config_manager
+from naver_to_sheet import is_today_news
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class NewsSaveItem(BaseModel):
     link: str = Field(..., min_length=1)
     category: Optional[str] = None
     search_keyword: Optional[str] = None
+    pubDate: Optional[str] = None
 
 
 class NewsSaveRequest(BaseModel):
@@ -157,6 +159,7 @@ def _append_news_to_sheet(
     """
     rows_to_append: List[List[Any]] = []
     skipped = 0
+    date_filtered = 0
 
     for item in items:
         title = item.get("title", "").strip()
@@ -168,11 +171,17 @@ def _append_news_to_sheet(
             skipped += 1
             continue
 
+        # 당일 뉴스만 허용 (pubDate가 있으면 검증, 없으면 통과)
+        pub_date = item.get("pubDate", "")
+        if pub_date and not is_today_news(pub_date):
+            date_filtered += 1
+            continue
+
         rows_to_append.append([title, content, link, category])
 
     actually_saved = sheet_client.append_news_rows(sheet_url, rows_to_append)
     extra_skipped = len(rows_to_append) - actually_saved
-    return {"saved": actually_saved, "skipped": skipped + extra_skipped}
+    return {"saved": actually_saved, "skipped": skipped + extra_skipped, "date_filtered": date_filtered}
 
 
 # ---------------------------------------------------------------------------

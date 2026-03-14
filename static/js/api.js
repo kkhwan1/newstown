@@ -121,6 +121,7 @@ const API = {
             content: item.content || item.description || '',
             link: item.link || item.originallink || '',
             category: item.category,
+            pubDate: item.pubDate || '',
             search_keyword: searchKeyword
         }));
         return this.fetch('/news/save', {
