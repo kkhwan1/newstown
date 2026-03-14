@@ -1,0 +1,18 @@
+[Unit]
+Description=Cloudflare Tunnel for TyNewsauto
+After=network-online.target tynewsauto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/tynewsauto
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8001
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared
+
+[Install]
+WantedBy=multi-user.target

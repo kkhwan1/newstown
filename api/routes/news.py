@@ -150,10 +150,11 @@ def _append_news_to_sheet(
     """
     Append news items to the sheet, deduplicating by link.
 
+    Dedup is handled inside append_news_rows() which reads the sheet
+    immediately before writing. This avoids double-reading the sheet.
+
     Returns dict with 'saved' and 'skipped' counts.
     """
-    existing_links = sheet_client.get_existing_links(sheet_url)
-
     rows_to_append: List[List[Any]] = []
     skipped = 0
 
@@ -167,15 +168,11 @@ def _append_news_to_sheet(
             skipped += 1
             continue
 
-        if link in existing_links:
-            skipped += 1
-            continue
-
         rows_to_append.append([title, content, link, category])
-        existing_links.add(link)  # prevent duplicate within this batch
 
-    saved = sheet_client.append_news_rows(sheet_url, rows_to_append)
-    return {"saved": saved, "skipped": skipped}
+    actually_saved = sheet_client.append_news_rows(sheet_url, rows_to_append)
+    extra_skipped = len(rows_to_append) - actually_saved
+    return {"saved": actually_saved, "skipped": skipped + extra_skipped}
 
 
 # ---------------------------------------------------------------------------

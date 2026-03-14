@@ -228,32 +228,60 @@ def count_sheet_news(sheet_url: str) -> Dict[str, Any]:
 
 def append_news_rows(sheet_url: str, rows: List[List[Any]]) -> int:
     """
-    Append rows to the first worksheet.
+    Append rows to the first worksheet, deduplicating by link (column C).
+
+    Reads the sheet immediately before writing to catch duplicates added
+    by other processes (auto-collection, manual save, etc.) since the
+    caller last checked.
 
     Each element of rows should be a list of column values:
         [title, content, link, category]
-
-    The cache is invalidated after a successful write so subsequent reads
-    reflect the new data.
 
     Args:
         sheet_url: Google Sheets URL.
         rows:      List of row arrays to append.
 
     Returns:
-        Number of rows actually appended.
+        Number of rows actually appended (after dedup).
     """
     if not rows:
         return 0
 
     worksheet = get_worksheet(sheet_url)
-    worksheet.append_rows(rows, value_input_option="RAW")
 
-    # Invalidate all cached entries for this sheet
+    # Read current sheet links right before writing (bypass cache).
+    # Note: a small race window exists between this read and the append
+    # below, but Google Sheets has no atomic read-then-write primitive.
+    all_values = worksheet.get_all_values()
+    existing_links: Set[str] = set()
+    for sheet_row in all_values[1:]:
+        if len(sheet_row) > 2 and sheet_row[2].strip():
+            existing_links.add(sheet_row[2].strip())
+
+    # Filter out duplicates
+    unique_rows = []
+    for row in rows:
+        link = row[2].strip() if len(row) > 2 else ""
+        if link and link not in existing_links:
+            unique_rows.append(row)
+            existing_links.add(link)
+
+    if not unique_rows:
+        logger.info("append_news_rows: all %d rows were duplicates, nothing to append", len(rows))
+        return 0
+
+    if len(unique_rows) < len(rows):
+        logger.info("append_news_rows: filtered %d duplicates, appending %d rows",
+                     len(rows) - len(unique_rows), len(unique_rows))
+
+    worksheet.append_rows(unique_rows, value_input_option="RAW")
+
+    # Invalidate news cache so subsequent reads reflect the new data.
+    # ws: cache (worksheet object) is NOT invalidated — row appends don't
+    # affect the gspread worksheet handle.
     _invalidate_cache(f"news:{sheet_url}")
-    _invalidate_cache(f"ws:{sheet_url}")
 
-    return len(rows)
+    return len(unique_rows)
 
 
 def get_existing_links(sheet_url: str) -> Set[str]:

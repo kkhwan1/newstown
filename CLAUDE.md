@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Korean news automation: Naver API → Google Sheets → multi-platform auto-upload (Golf Times, Bizwnews). FastAPI backend + HTML/JS SPA dashboard.
 
 **Production**: `root@129.212.236.253` (port 8001), timezone `Asia/Seoul`
-**Dashboard**: `https://candidate-keith-leo-original.trycloudflare.com/dashboard` (Cloudflare Tunnel)
+**Dashboard**: `https://warm-bargain-shoulder-maker.trycloudflare.com/dashboard` (Cloudflare Quick Tunnel — URL changes on cloudflared restart)
+**Direct access**: `http://129.212.236.253:8001/dashboard` (stable, no HTTPS)
 
 ## Commands
 
@@ -20,7 +21,7 @@ python init_db.py                           # First-time setup (config files + a
 # API docs: http://localhost:{API_PORT}/docs
 ```
 
-No test framework, linter, or CI/CD.
+No test framework, linter, or CI/CD. Manual test helpers in `scripts/test_*.py`.
 
 ## Architecture
 
@@ -47,13 +48,17 @@ Platform-specific columns are configured in `upload_platforms` config. **Do not 
 
 **No database** — JSON files (`config/`) + Google Sheets only.
 
-**Process management**: `ProcessManager` spawns `scripts/run_*.py` via subprocess. Config passed as `PROCESS_CONFIG` env var (JSON).
+**Process management**: `ProcessManager` (singleton) spawns `scripts/run_*.py` via subprocess with `start_new_session=True`. Config passed as `PROCESS_CONFIG` env var (JSON). File-based status at `{tempdir}/tynewsauto/process_status.json` survives API restarts; validates PIDs on init to discard stale entries.
 
 **API**: All REST under `/api/`. WebSocket at `/ws/logs?token=JWT`. SPA at `/dashboard`, root `/` is health check. Routes in `api/routes/`: auth, config, process, news, sync, logs, admin, platforms, usage. Note: `/stop-all` route must be declared before `/{process_name}` wildcard in `process.py`.
 
 **Auth**: Custom HMAC-SHA256 token (format: `username:timestamp:expiry:signature`), bcrypt passwords in `config/users.json`. Roles: `admin`/`user`. Default: `admin123/admin17730`. `user` role hides Naver API settings, user management, and API usage on the frontend only — all API endpoints except `admin.py` (user CRUD) are accessible to both roles. Rate limit: 5/60s on login (in-memory, per-worker).
 
-**Frontend SPA**: `dashboard.html` + `static/js/`. `app.js` (routing, state in `AppState`, page renderers), `api.js` (REST client with auto-401 logout), `websocket.js` (WS for real-time logs, auto-switches to HTTP polling at `/api/logs?since=ts` after 5 failed reconnects). XSS protected via `escapeHTML()`.
+**Frontend SPA**: `dashboard.html` + `static/js/`. `app.js` (routing, state in `AppState`, page renderers), `api.js` (REST client with auto-401 logout), `websocket.js` (WS for real-time logs, auto-switches to HTTP polling at `/api/logs?since=ts` after 5 failed reconnects). XSS protected via `escapeHTML()`. Keyword settings use tag/chip UI (`.kw-tag` with X delete + Enter to add, auto-saves). Platform selection shows per-platform category checkboxes (`.category-chip`).
+
+## Critical: CSS Variables
+
+`style.css` defines `--color-primary` (#111) and `--color-secondary` (#fff), NOT `--primary`. Always use `var(--color-primary)` for themed colors. Other variables: `--bg-primary`, `--bg-secondary`, `--bg-tertiary`, `--text-primary`, `--text-secondary`, `--border-color`, `--border-light`, `--radius-sm`, `--radius-md`.
 
 ## Critical: Column Index Convention
 
@@ -92,7 +97,7 @@ pm.start_process("news_collection", "scripts/run_news_collection.py", config={..
 
 ## Config Sections (`dashboard_config.json`)
 
-`news_collection` (keywords, display_count, sort) | `category_keywords` ({category}.core[], .general[]) | `upload_monitor` (check_interval, completed_column, concurrent_uploads) | `row_deletion` (delete_interval, max_delete_count) | `google_sheet` (url) | `naver_api` (client_id, client_secret) | `golftimes` (site_id, site_pw) | `bizwnews` (site_id, site_pw) | `upload_platforms` ({name}.enabled/title_column/content_column/completed_column/credentials_section) | `news_schedule` (enabled, interval_hours). Pydantic schemas in `utils/config_schema.py`. Env vars override JSON via `ConfigManager._apply_env_overrides()`.
+`news_collection` (keywords, display_count, sort) | `category_keywords` ({category}.core[], .general[]) | `upload_monitor` (check_interval, completed_column, concurrent_uploads) | `row_deletion` (delete_interval, max_delete_count) | `google_sheet` (url) | `naver_api` (client_id, client_secret) | `golftimes` (site_id, site_pw) | `bizwnews` (site_id, site_pw) | `upload_platforms` ({name}.enabled/title_column/content_column/completed_column/credentials_section/**allowed_categories**) | `news_schedule` (enabled, interval_hours). Pydantic schemas in `utils/config_schema.py`. Env vars override JSON via `ConfigManager._apply_env_overrides()`.
 
 ## Platform Upload
 
@@ -100,9 +105,34 @@ Two platforms sharing same CMS (different sites): **Golf Times** (`golftimes.py`
 
 Golftimes has two modes via `config.extra_params.mode`: `user` (default) / `admin`. Bizwnews preserves CKEditor header (`[비즈월드]`) and footer (`[비즈월드=reporter]`) during content insertion.
 
+**Per-platform category filtering**: Each platform has `allowed_categories` (list of strings, empty=all). Upload monitor reads column D (category, 0-based index 3) and skips rows whose category is not in the list. Config example: `golftimes: ["연애","경제","스포츠"]`, `bizwnews: ["경제"]`. Dashboard shows category checkboxes per platform.
+
 **Row deletion**: `run_row_deletion.py` checks `COMPLETED_COLUMNS = [8, 12]` (H + L columns). Rows are deleted only when **all** platform completed columns contain "완료".
 
 **Platform factory**: To add a platform: (1) Create `utils/platforms/newname.py` inheriting `PlatformUploader` from `base.py`, (2) Implement `login()`, `upload(title, content, category)`, `from_config()`, (3) Register in `__init__.py::platform_map`, (4) Add credentials section + `PlatformConfig` entry in config. `DriverPool` in `__init__.py` provides Chrome WebDriver pooling for concurrent uploads.
+
+## Critical: News Deduplication System
+
+`naver_to_sheet.py`의 뉴스 수집은 4단계 중복 판정 + 재검색 루프로 구성.
+
+**중복 판정 순서** (각 뉴스 아이템마다):
+1. `check_duplicate_in_cache()` — 링크 + 제목 유사도 (시트 캐시 대비)
+2. `is_duplicate_in_db()` — 시트 기존 제목 대비 (`[시트중복]` 로그)
+3. `is_duplicate_in_db()` — 같은 배치 내 수집 제목 대비 (`[배치중복]` 로그)
+4. `is_news_excluded()` — 카테고리별 제외 키워드 매칭
+
+**임계값** (`is_duplicate_in_db`, `check_duplicate_in_cache`):
+
+| 판정 | 임계값 | 비고 |
+|------|--------|------|
+| 제목 유사도 (SequenceMatcher) | ≥0.30 | `threshold` 파라미터 |
+| 핵심 키워드 겹침 | ≥0.40 | `extract_key_phrases()` 결과 비교 |
+| 본문 유사도 | ≥0.50 | 앞 500자 비교 (is_duplicate_in_db만) |
+| 고유명사 주제 | `is_same_topic()` | NER 기반 같은 주제 판별 |
+
+**재검색 루프** (`MAX_ROUNDS = 3`): 중복 제외로 카테고리 목표 미달 시 최대 3라운드 재검색. 라운드마다 `display` 수를 증가시켜 (`search_count * (round_num + 1)`, max 100) 더 많은 결과에서 비중복 뉴스를 찾음. 키워드 순서도 라운드마다 셔플.
+
+**인물 제한**: `MAX_PERSON_NEWS = 3` — 같은 인물 뉴스는 배치당 최대 3건. NER로 인물명 추출, `person_counter`로 추적.
 
 ## Naver API Gotcha
 
@@ -115,8 +145,34 @@ Naver returns `description` not `content`. `api.js::saveNews()` maps `item.descr
 - `config/users.json` — user accounts (excluded from git)
 - `.env` — copy from `.env.example`
 
+## Production Services (systemd)
+
+```bash
+# API 서버 (자동 재시작, 부팅 시 자동 시작)
+systemctl status tynewsauto
+systemctl restart tynewsauto
+journalctl -u tynewsauto -f
+
+# Cloudflare Tunnel (자동 재시작)
+systemctl status cloudflared
+systemctl restart cloudflared
+journalctl -u cloudflared --no-pager | grep trycloudflare   # Quick Tunnel URL 확인
+```
+
+서비스 파일: `/etc/systemd/system/tynewsauto.service`, `/etc/systemd/system/cloudflared.service`
+헬스체크 스크립트: `deploy/check-tunnel.sh` (cron 5분 주기 권장)
+
 ## Deployment
 
 - **Docker**: `python:3.11-slim`, port 8080, `entrypoint.sh` decodes `GOOGLE_CREDENTIALS_BASE64`
 - **DigitalOcean**: `.do/app.yaml`, `professional-s` instance
 - **Production server**: SSH `root@129.212.236.253`, project at `/root/tynewsauto`, managed by systemd (`systemctl restart tynewsauto`). Deploy: `git pull && systemctl restart tynewsauto`. Server timezone: `Asia/Seoul`.
+
+### Cloudflare Tunnel
+
+`deploy/` 폴더에 설정 파일 포함. Quick Tunnel(현재)은 재시작 시 URL 변경됨. 고정 URL 필요 시 Named Tunnel 전환:
+
+```bash
+bash deploy/setup-tunnel.sh quick   # Quick Tunnel (임시 URL)
+bash deploy/setup-tunnel.sh named   # Named Tunnel (고정 URL, Cloudflare 로그인 필요)
+```
