@@ -406,7 +406,7 @@ async def save_news(
 @router.delete("/all", status_code=status.HTTP_200_OK)
 async def delete_all_news(
     category: Optional[str] = Query(None, description="Filter by category"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Delete all news rows from Google Sheet.
@@ -440,7 +440,7 @@ async def delete_all_news(
 @router.delete("/{news_id}", status_code=status.HTTP_200_OK)
 async def delete_news(
     news_id: int = FastPath(..., ge=2, description="Sheet row number (>= 2)"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_admin_user),
 ):
     """
     Delete a single news row from Google Sheet.

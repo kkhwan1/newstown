@@ -44,8 +44,8 @@ class ProcessManager:
         """프로세스별 로그 파일 경로"""
         return str(self.LOG_DIR / f"{name}.log")
 
-    def _load_status(self) -> Dict[str, Any]:
-        """파일에서 상태 로드"""
+    def _load_status_unlocked(self) -> Dict[str, Any]:
+        """파일에서 상태 로드 (lock 없이 — 호출자가 lock을 보유해야 함)"""
         try:
             status_path = str(self.STATUS_FILE)
             if os.path.exists(status_path):
@@ -55,32 +55,42 @@ class ProcessManager:
             print(f"Warning: 상태 파일 로드 실패: {e}")
         return {}
 
+    def _load_status(self) -> Dict[str, Any]:
+        """파일에서 상태 로드 (thread-safe)"""
+        with self._lock:
+            return self._load_status_unlocked()
+
+    def _write_status_unlocked(self, status: Dict[str, Any]):
+        """상태를 파일에 atomic write (lock 없이 — 호출자가 lock을 보유해야 함)"""
+        tmp_path = self.STATUS_FILE.with_suffix('.tmp')
+        with open(str(tmp_path), 'w', encoding='utf-8') as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+        os.replace(str(tmp_path), str(self.STATUS_FILE))
+
     def _save_status(self, name: str, pid: int, start_time: str, config: Optional[Dict] = None):
-        """상태를 파일에 저장"""
-        try:
-            status = self._load_status()
-            status[name] = {
-                'pid': pid,
-                'start_time': start_time,
-                'config': config
-            }
-            status_path = str(self.STATUS_FILE)
-            with open(status_path, 'w', encoding='utf-8') as f:
-                json.dump(status, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"상태 저장 실패: {e}")
+        """상태를 파일에 저장 (atomic RMW with lock)"""
+        with self._lock:
+            try:
+                status = self._load_status_unlocked()
+                status[name] = {
+                    'pid': pid,
+                    'start_time': start_time,
+                    'config': config
+                }
+                self._write_status_unlocked(status)
+            except Exception as e:
+                print(f"상태 저장 실패: {e}")
 
     def _remove_status(self, name: str):
-        """상태에서 프로세스 제거"""
-        try:
-            status = self._load_status()
-            if name in status:
-                del status[name]
-                status_path = str(self.STATUS_FILE)
-                with open(status_path, 'w', encoding='utf-8') as f:
-                    json.dump(status, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Warning: 상태 제거 실패 ({name}): {e}")
+        """상태에서 프로세스 제거 (atomic RMW with lock)"""
+        with self._lock:
+            try:
+                status = self._load_status_unlocked()
+                if name in status:
+                    del status[name]
+                    self._write_status_unlocked(status)
+            except Exception as e:
+                print(f"Warning: 상태 제거 실패 ({name}): {e}")
 
     def _check_pid_exists(self, pid: int) -> bool:
         """PID가 실제로 존재하는지 확인"""
@@ -143,8 +153,7 @@ class ProcessManager:
             self._processes[name] = process
             self._log_files[name] = log_file
             start_time = datetime.now().isoformat()
-            with self._lock:
-                self._save_status(name, process.pid, start_time, config)
+            self._save_status(name, process.pid, start_time, config)
 
             print(f"[OK] {name} 프로세스 시작됨 (PID: {process.pid})")
             return True
@@ -155,8 +164,7 @@ class ProcessManager:
 
     def stop_process(self, name: str, timeout: float = 10.0) -> bool:
         """프로세스 중지"""
-        with self._lock:
-            status = self._load_status()
+        status = self._load_status()
         info = status.get(name, {})
         pid = info.get('pid')
 
@@ -274,8 +282,7 @@ class ProcessManager:
     def get_status(self, name: str) -> Dict[str, Any]:
         """프로세스 상태 정보 반환"""
         running = self.is_running(name)
-        with self._lock:
-            status = self._load_status()
+        status = self._load_status()
         info = status.get(name, {})
 
         return {

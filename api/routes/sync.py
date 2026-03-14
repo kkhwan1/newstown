@@ -99,7 +99,7 @@ async def get_sheet_count(current_user: User = Depends(get_current_user)):
 @router.delete("/delete-from-sheet", status_code=status.HTTP_200_OK)
 async def delete_from_sheet(
     row_numbers: List[int] = Query(..., description="Row numbers to delete from sheet"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Delete rows from Google Sheet

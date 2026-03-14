@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/auth", tags=["authentication"])
 class ChangeMyPasswordRequest(BaseModel):
     """Change own password request"""
     current_password: str = Field(..., min_length=1, description="Current password")
-    new_password: str = Field(..., min_length=6, description="New password (minimum 6 characters)")
+    new_password: str = Field(..., min_length=8, description="New password (minimum 8 characters)")
 
 
 # --- Helper Functions ---

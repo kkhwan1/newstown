@@ -32,13 +32,13 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 class CreateUserRequest(BaseModel):
     """Create user request"""
     username: str = Field(..., min_length=1, max_length=100, description="Username")
-    password: str = Field(..., min_length=6, description="Password (minimum 6 characters)")
+    password: str = Field(..., min_length=8, description="Password (minimum 8 characters)")
     role: str = Field(default="user", description="User role (admin/user)")
 
 
 class ChangePasswordRequest(BaseModel):
     """Change user password request (admin)"""
-    new_password: str = Field(..., min_length=6, description="New password (minimum 6 characters)")
+    new_password: str = Field(..., min_length=8, description="New password (minimum 8 characters)")
 
 
 class ChangeRoleRequest(BaseModel):

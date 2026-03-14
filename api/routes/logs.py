@@ -156,7 +156,7 @@ async def get_logs(
 
 @router.delete("", status_code=status.HTTP_200_OK)
 async def clear_logs(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_admin_user)
 ):
     """
     Clear application logs

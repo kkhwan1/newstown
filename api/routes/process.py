@@ -42,20 +42,27 @@ PROCESS_CONFIG_SECTIONS = {
 }
 
 
+def _unmask_recursive(data: dict, real_data: dict) -> dict:
+    """Recursively replace ***MASKED*** values with real values."""
+    result = dict(data)
+    for key, value in result.items():
+        if isinstance(value, str) and value == MASKED_VALUE:
+            if key in real_data:
+                result[key] = real_data[key]
+        elif isinstance(value, dict) and key in real_data and isinstance(real_data[key], dict):
+            result[key] = _unmask_recursive(value, real_data[key])
+    return result
+
+
 def _unmask_config(config: dict, process_name: str) -> dict:
     """Replace ***MASKED*** values with real values from ConfigManager.
 
     The frontend receives masked credentials from GET /api/config endpoints.
     When it sends that config back to start a process, we need to restore
     the real credential values before passing to the subprocess.
+    Handles nested dicts (e.g. platform credentials like golftimes.site_pw).
     """
     if not config:
-        return config
-
-    has_masked = any(
-        v == MASKED_VALUE for v in config.values() if isinstance(v, str)
-    )
-    if not has_masked:
         return config
 
     cm = get_config_manager()
@@ -64,11 +71,7 @@ def _unmask_config(config: dict, process_name: str) -> dict:
         return config
 
     real_config = cm.get(section) or {}
-    result = dict(config)
-    for key, value in result.items():
-        if value == MASKED_VALUE and key in real_config:
-            result[key] = real_config[key]
-    return result
+    return _unmask_recursive(config, real_config)
 
 
 @router.get("", response_model=ProcessListResponse, status_code=status.HTTP_200_OK)

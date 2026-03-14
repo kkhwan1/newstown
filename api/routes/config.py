@@ -66,16 +66,13 @@ async def update_config(
     section = request.section
     data = request.data
 
-    # Validate section with Pydantic if available
-    if hasattr(config_manager, 'set_section_with_validation'):
-        success, error_msg = config_manager.set_section_with_validation(section, data, save=True)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Validation failed: {error_msg}"
-            )
-    else:
-        config_manager.set_section(section, data, save=True)
+    # Always validate section with Pydantic before saving
+    success, error_msg = config_manager.set_section_with_validation(section, data, save=True)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Validation failed: {error_msg}"
+        )
 
     # Return updated section
     updated_data = config_manager.get(section)

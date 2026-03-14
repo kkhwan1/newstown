@@ -312,24 +312,29 @@ class ConfigManager:
         Returns:
             (성공여부, 에러메시지)
         """
-        if section not in self._config:
-            self._config[section] = {}
+        with self._lock:
+            if section not in self._config:
+                self._config[section] = {}
 
-        self._config[section][key] = value
+            original_value = self._config[section].get(key)
+            had_key = key in self._config[section]
+            self._config[section][key] = value
 
-        # Pydantic 검증
-        if PYDANTIC_AVAILABLE:
-            success, error_msg = self.validate_section(section)
-            if not success:
-                # 실패 시 롤백
-                if key in self._config[section]:
-                    del self._config[section][key]
-                return False, error_msg
+            # Pydantic 검증
+            if PYDANTIC_AVAILABLE:
+                success, error_msg = self.validate_section(section)
+                if not success:
+                    # 실패 시 롤백
+                    if had_key:
+                        self._config[section][key] = original_value
+                    else:
+                        del self._config[section][key]
+                    return False, error_msg
 
-        if save:
-            self._save_to_json()
+            if save:
+                self._save_to_json()
 
-        return True, None
+            return True, None
 
     def set_section_with_validation(self, section: str, data: Dict[str, Any], save: bool = True) -> Tuple[bool, Optional[str]]:
         """
