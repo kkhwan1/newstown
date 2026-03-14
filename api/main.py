@@ -18,11 +18,14 @@ Features:
 """
 import os
 import sys
+import logging
 import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, Query
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,15 +43,15 @@ from api.dependencies.auth import get_current_user_ws
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
-    print("🚀 Starting FastAPI server...")
+    logger.info("Starting FastAPI server...")
     # Initialize config manager
     get_config_manager()
-    print("✅ Configuration loaded")
+    logger.info("Configuration loaded")
 
     yield
 
     # Shutdown: Cleanup
-    print("🛑 Shutting down FastAPI server...")
+    logger.info("Shutting down FastAPI server...")
 
 
 # Create FastAPI app
@@ -71,7 +74,12 @@ origins = [
 ]
 extra_origins = os.getenv("CORS_ORIGINS", "")
 if extra_origins:
-    origins.extend([o.strip() for o in extra_origins.split(",") if o.strip()])
+    for origin in extra_origins.split(","):
+        origin = origin.strip()
+        if origin and (origin.startswith("http://") or origin.startswith("https://")):
+            origins.append(origin)
+        elif origin:
+            logger.warning("Invalid CORS origin ignored (must start with http:// or https://): %s", origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -131,7 +139,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler"""
-    print(f"❌ Unhandled exception: {exc}")
+    logger.error("Unhandled exception: %s", exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={
@@ -180,19 +188,19 @@ class LogConnectionManager:
     async def broadcast_log(self, log_entry: dict, user_id: str = None):
         """Send log entry to connected clients"""
         if user_id and user_id in self.active_connections:
-            for connection in self.active_connections[user_id]:
+            for connection in list(self.active_connections[user_id]):
                 try:
                     await connection.send_json(log_entry)
                 except Exception:
-                    # Connection may be closed
-                    pass
+                    # Connection closed — will be cleaned up on disconnect
+                    self.active_connections[user_id].remove(connection)
 
     async def send_personal_log(self, log_entry: dict, websocket: WebSocket):
         """Send log entry to a specific connection"""
         try:
             await websocket.send_json(log_entry)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("WebSocket send failed (connection likely closed): %s", e)
 
     def get_connection_count(self, user_id: str = None) -> int:
         """Get count of active connections"""
@@ -248,7 +256,7 @@ async def websocket_logs(
     except WebSocketDisconnect:
         log_manager.disconnect(websocket, user_id)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.warning("WebSocket error: %s", e)
         log_manager.disconnect(websocket, user_id)
 
 
@@ -298,9 +306,8 @@ if __name__ == "__main__":
     port = int(os.getenv("API_PORT", "8000"))
     host = os.getenv("API_HOST", "0.0.0.0")
 
-    print(f"🚀 Starting server on {host}:{port}")
-    print(f"📖 API docs: http://{host}:{port}/docs")
-    print(f"🔒 ReDoc: http://{host}:{port}/redoc")
+    logger.info("Starting server on %s:%d", host, port)
+    logger.info("API docs: http://%s:%d/docs", host, port)
 
     uvicorn.run(
         "api.main:app",

@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Optional, List, Dict
 
+_logger = logging.getLogger(__name__)
+
 LOG_FILE = Path(__file__).parent.parent / "logs" / "activity.log"
 MAX_LINES = 500
 
@@ -40,7 +42,7 @@ def add_log(message: str, level: str = "INFO", category: str = "SYSTEM"):
             with open(LOG_FILE, 'w', encoding='utf-8') as f:
                 f.writelines(lines)
         except Exception as e:
-            print(f"Log error: {e}")
+            _logger.warning("Log write error: %s", e)
 
 def get_logs(limit: int = 100, category: Optional[str] = None) -> List[Dict]:
     ensure_log_dir()
@@ -59,10 +61,10 @@ def get_logs(limit: int = 100, category: Optional[str] = None) -> List[Dict]:
                     if len(logs) >= limit:
                         break
                 except Exception as e:
-                    print(f"Log parse error: {e}")
+                    _logger.debug("Log parse error: %s", e)
                     continue
     except Exception as e:
-        print(f"Read log error: {e}")
+        _logger.warning("Read log error: %s", e)
 
     return logs
 
@@ -73,7 +75,7 @@ def clear_logs():
             with open(LOG_FILE, 'w', encoding='utf-8') as f:
                 f.write("")
         except Exception as e:
-            print(f"Warning: 로그 삭제 실패: {e}")
+            _logger.warning("로그 삭제 실패: %s", e)
 
 
 # --- Audit Logger (M5) ---

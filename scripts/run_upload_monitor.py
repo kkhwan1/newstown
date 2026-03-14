@@ -69,8 +69,8 @@ def cleanup_chrome_processes():
             subprocess.run(['pkill', '-f', 'chrome'], capture_output=True, timeout=10)
             subprocess.run(['pkill', '-f', 'chromium'], capture_output=True, timeout=10)
             subprocess.run(['pkill', '-f', 'chromedriver'], capture_output=True, timeout=10)
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"Chrome 프로세스 정리 중 오류 (무시): {e}", "DEBUG")
 
 def load_config():
     """환경 변수에서 설정 로드 (프론트엔드에서 전달)"""

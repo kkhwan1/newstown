@@ -218,9 +218,7 @@ def count_sheet_news(sheet_url: str) -> Dict[str, Any]:
 
     by_category: Dict[str, int] = {}
     for row in cached_rows:
-        cat = row.get("category") or "기타"
-        if not cat:
-            cat = "기타"
+        cat = (row.get("category") or "").strip() or "기타"
         by_category[cat] = by_category.get(cat, 0) + 1
 
     return {"total": len(cached_rows), "by_category": by_category}

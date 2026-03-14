@@ -37,6 +37,12 @@ if sys.platform == 'win32':
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
+from utils.logger import add_log
+
+def log(msg, level="INFO"):
+    print(f"[{level}] {msg}")
+    add_log(msg, level=level, category="DELETION")
+
 # 종료 플래그
 _shutdown_requested = False
 _shutdown_event = threading.Event()
@@ -60,7 +66,7 @@ PLATFORM_CONFIGS = {
 def signal_handler(signum, frame):
     """신호 핸들러 - graceful shutdown"""
     global _shutdown_requested
-    print(f"\n종료 신호 수신 (signal={signum}), 정리 중...")
+    log(f"종료 신호 수신 (signal={signum}), 정리 중...", "WARN")
     _shutdown_requested = True
     _shutdown_event.set()
 
@@ -85,7 +91,7 @@ def load_config():
     try:
         return json.loads(config_str)
     except json.JSONDecodeError:
-        print("설정 파싱 실패, 기본값 사용")
+        log("설정 파싱 실패, 기본값 사용", "WARN")
         return {}
 
 
@@ -100,8 +106,8 @@ def get_deleter_class(platform_name: str):
         Deleter 클래스 또는 None
     """
     if platform_name not in PLATFORM_CONFIGS:
-        print(f"지원하지 않는 플랫폼: {platform_name}")
-        print(f"지원 플랫폼: {list(PLATFORM_CONFIGS.keys())}")
+        log(f"지원하지 않는 플랫폼: {platform_name}", "ERROR")
+        log(f"지원 플랫폼: {list(PLATFORM_CONFIGS.keys())}")
         return None
 
     config = PLATFORM_CONFIGS[platform_name]
@@ -115,8 +121,8 @@ def get_deleter_class(platform_name: str):
 
     module_file = os.path.basename(config['module_file'])
     if module_file not in ALLOWED_MODULES:
-        print(f"Error: 허용되지 않은 모듈 파일: {module_file}")
-        print(f"허용된 모듈: {ALLOWED_MODULES}")
+        log(f"Error: 허용되지 않은 모듈 파일: {module_file}", "ERROR")
+        log(f"허용된 모듈: {ALLOWED_MODULES}")
         return None
 
     try:
@@ -127,12 +133,12 @@ def get_deleter_class(platform_name: str):
         # Verify resolved path is within the project directory
         resolved = os.path.realpath(module_path)
         if not resolved.startswith(os.path.realpath(parent_dir)):
-            print(f"Error: 모듈 경로가 프로젝트 디렉토리 외부입니다")
+            log("Error: 모듈 경로가 프로젝트 디렉토리 외부입니다", "ERROR")
             return None
 
         spec = importlib.util.spec_from_file_location(module_name, module_path)
         if spec is None or spec.loader is None:
-            print(f"모듈 로드 실패: {module_path}")
+            log(f"모듈 로드 실패: {module_path}", "ERROR")
             return None
 
         module = importlib.util.module_from_spec(spec)
@@ -141,13 +147,13 @@ def get_deleter_class(platform_name: str):
         # 클래스 가져오기
         deleter_class = getattr(module, class_name, None)
         if deleter_class is None:
-            print(f"클래스를 찾을 수 없음: {class_name}")
+            log(f"클래스를 찾을 수 없음: {class_name}", "ERROR")
             return None
 
         return deleter_class
 
     except Exception as e:
-        print(f"모듈 로드 중 오류: {e}")
+        log(f"모듈 로드 중 오류: {e}", "ERROR")
         import traceback
         traceback.print_exc()
         return None
@@ -160,7 +166,7 @@ def run_deletion(config):
     # 플랫폼 확인
     platform = config.get('platform', 'golftimes')
     if platform not in PLATFORM_CONFIGS:
-        print(f"지원하지 않는 플랫폼: {platform}")
+        log(f"지원하지 않는 플랫폼: {platform}", "ERROR")
         return
 
     platform_config = PLATFORM_CONFIGS[platform]
@@ -172,16 +178,12 @@ def run_deletion(config):
     completed_columns = config.get('completed_columns', COMPLETED_COLUMNS)
 
     col_names = ', '.join(f"{chr(64 + c)}({c})" for c in completed_columns)
-    print(f"설정:")
-    print(f"   - 시트 URL: {sheet_url[:50]}...")
-    print(f"   - 삭제 간격: {delete_interval}분")
-    print(f"   - 최대 삭제 개수: {max_delete_count}")
-    print(f"   - 완료 체크 열: {col_names} (모두 완료 시 행 삭제)")
+    log(f"설정: 시트 URL={sheet_url[:50]}..., 삭제 간격={delete_interval}분, 최대 삭제={max_delete_count}, 완료 열={col_names}")
 
     # Deleter 클래스 로드
     deleter_class = get_deleter_class(platform)
     if deleter_class is None:
-        print("Deleter 클래스 로드 실패")
+        log("Deleter 클래스 로드 실패", "ERROR")
         return
 
     # Deleter 인스턴스 생성
@@ -195,16 +197,14 @@ def run_deletion(config):
 
         # 연결 확인
         if not deleter.connect():
-            print("연결 실패")
+            log("연결 실패", "ERROR")
             return
 
-        print("연결 성공")
-        print(f"\n{col_names} 열 감시 중 (모두 완료 시 행 삭제)...")
-        print(f"{delete_interval}분마다 완료된 행 자동 삭제")
-        print(f"한 번에 최대 {max_delete_count}개 행만 삭제\n")
+        log("연결 성공, 감시 시작", "SUCCESS")
+        log(f"{col_names} 열 감시 중 (모두 완료 시 행 삭제), {delete_interval}분 간격, 최대 {max_delete_count}개")
 
     except Exception as e:
-        print(f"초기화 실패: {e}")
+        log(f"초기화 실패: {e}", "ERROR")
         import traceback
         traceback.print_exc()
         return
@@ -216,24 +216,24 @@ def run_deletion(config):
     while not _shutdown_requested:
         try:
             delete_count += 1
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {delete_count}번째 삭제 작업 시작...")
+            log(f"[{delete_count}] 삭제 작업 시작...")
 
             deleted_rows = deleter.delete_completed_rows()
 
             if deleted_rows > 0:
-                print(f"   총 {deleted_rows}개 행 삭제 완료")
+                log(f"총 {deleted_rows}개 행 삭제 완료", "SUCCESS")
             else:
-                print(f"   삭제할 완료된 행 없음")
+                log(f"삭제할 완료된 행 없음")
 
-            print(f"   다음 삭제 작업까지 {delete_interval}분({wait_seconds}초) 대기...")
+            log(f"다음 삭제까지 {delete_interval}분 대기...")
 
             # 인터럽트 가능한 sleep
             if interruptible_sleep(wait_seconds):
-                print("대기 중 종료 신호 수신")
+                log("대기 중 종료 신호 수신", "WARN")
                 break
 
         except Exception as e:
-            print(f"오류 발생: {e}")
+            log(f"오류 발생: {e}", "ERROR")
             import traceback
             traceback.print_exc()
 
@@ -244,32 +244,28 @@ def run_deletion(config):
 
 def main():
     """메인 실행 함수"""
-    print("=" * 60)
-    print("  완료행 삭제 러너 시작")
-    print("=" * 60)
+    log("완료행 삭제 러너 시작", "SUCCESS")
 
     setup_signal_handlers()
 
     config = load_config()
     safe_config = {k: v for k, v in config.items() if k not in ('site_pw', 'site_id', 'client_secret', 'client_id', 'naver_client_id', 'naver_client_secret')}
-    print(f"설정 로드됨: {json.dumps(safe_config, ensure_ascii=False, indent=2)}")
+    log(f"설정 로드됨: {json.dumps(safe_config, ensure_ascii=False, indent=2)}")
 
     if _shutdown_requested:
-        print("종료 요청으로 실행 취소")
+        log("종료 요청으로 실행 취소", "WARN")
         return
 
     try:
         run_deletion(config)
     except KeyboardInterrupt:
-        print("\n사용자에 의해 중단됨")
+        log("사용자에 의해 중단됨", "WARN")
     except Exception as e:
-        print(f"\n오류 발생: {e}")
+        log(f"오류 발생: {e}", "ERROR")
         import traceback
         traceback.print_exc()
     finally:
-        print("=" * 60)
-        print("  완료행 삭제 러너 종료")
-        print("=" * 60)
+        log("완료행 삭제 러너 종료")
 
 
 if __name__ == "__main__":

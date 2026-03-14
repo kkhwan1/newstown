@@ -13,9 +13,12 @@ import time
 import tempfile
 import platform
 import threading
+import logging
 from datetime import datetime
 from typing import Dict, Optional, Any
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessManager:
@@ -52,7 +55,7 @@ class ProcessManager:
                 with open(status_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
         except Exception as e:
-            print(f"Warning: 상태 파일 로드 실패: {e}")
+            logger.warning("상태 파일 로드 실패: %s", e)
         return {}
 
     def _load_status(self) -> Dict[str, Any]:
@@ -79,7 +82,7 @@ class ProcessManager:
                 }
                 self._write_status_unlocked(status)
             except Exception as e:
-                print(f"상태 저장 실패: {e}")
+                logger.error("상태 저장 실패: %s", e)
 
     def _remove_status(self, name: str):
         """상태에서 프로세스 제거 (atomic RMW with lock)"""
@@ -90,7 +93,7 @@ class ProcessManager:
                     del status[name]
                     self._write_status_unlocked(status)
             except Exception as e:
-                print(f"Warning: 상태 제거 실패 ({name}): {e}")
+                logger.warning("상태 제거 실패 (%s): %s", name, e)
 
     def _check_pid_exists(self, pid: int) -> bool:
         """PID가 실제로 존재하는지 확인"""
@@ -120,7 +123,7 @@ class ProcessManager:
     def start_process(self, name: str, script_path: str, config: Optional[Dict[str, Any]] = None) -> bool:
         """프로세스 시작"""
         if self.is_running(name):
-            print(f"[WARN] {name} 프로세스가 이미 실행 중입니다.")
+            logger.warning("%s 프로세스가 이미 실행 중입니다.", name)
             return False
 
         try:
@@ -148,6 +151,7 @@ class ProcessManager:
                 )
             except Exception:
                 log_file.close()
+                logger.error("%s Popen 실패, 로그 파일 정리 완료", name)
                 raise
 
             self._processes[name] = process
@@ -155,11 +159,11 @@ class ProcessManager:
             start_time = datetime.now().isoformat()
             self._save_status(name, process.pid, start_time, config)
 
-            print(f"[OK] {name} 프로세스 시작됨 (PID: {process.pid})")
+            logger.info("%s 프로세스 시작됨 (PID: %d)", name, process.pid)
             return True
 
         except Exception as e:
-            print(f"[ERROR] {name} 프로세스 시작 실패: {e}")
+            logger.error("%s 프로세스 시작 실패: %s", name, e)
             return False
 
     def stop_process(self, name: str, timeout: float = 10.0) -> bool:
@@ -171,7 +175,7 @@ class ProcessManager:
         process = self._processes.get(name)
 
         if not pid and not process:
-            print(f"[WARN] {name} 프로세스가 실행 중이 아닙니다.")
+            logger.warning("%s 프로세스가 실행 중이 아닙니다.", name)
             return True
 
         try:
@@ -219,15 +223,15 @@ class ProcessManager:
             if log_file is not None:
                 try:
                     log_file.close()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("로그 파일 닫기 실패 (%s): %s", name, e)
 
             self._cleanup_process(name)
-            print(f"[OK] {name} 프로세스 종료됨")
+            logger.info("%s 프로세스 종료됨", name)
             return True
 
         except Exception as e:
-            print(f"[ERROR] {name} 프로세스 중지 실패: {e}")
+            logger.error("%s 프로세스 중지 실패: %s", name, e)
             self._cleanup_process(name)
             return False
 
@@ -302,7 +306,7 @@ class ProcessManager:
                     all_lines = f.readlines()
                     return ''.join(all_lines[-lines:])
         except Exception as e:
-            print(f"Warning: 로그 읽기 실패 ({name}): {e}")
+            logger.warning("로그 읽기 실패 (%s): %s", name, e)
         return ""
 
     def get_all_status(self) -> Dict[str, Dict[str, Any]]:

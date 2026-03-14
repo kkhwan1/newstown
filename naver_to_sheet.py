@@ -60,6 +60,9 @@ DEDUP_TITLE_THRESHOLD = 0.35
 DEDUP_KEYWORD_THRESHOLD = 0.40
 DEDUP_CONTENT_THRESHOLD = 0.40
 
+# 네이버 API 일일 호출 한도
+NAVER_API_DAILY_LIMIT = 25000
+
 
 # ==========================================
 # [CONFIG] 설정 클래스
@@ -488,8 +491,8 @@ def load_api_usage():
                 if data.get('date') != today:
                     return {'date': today, 'calls': 0, 'news_count': 0}
                 return data
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[WARN] API 사용량 로드 실패 (기본값 사용): {e}")
     return {'date': datetime.now().strftime('%Y-%m-%d'), 'calls': 0, 'news_count': 0}
 
 def save_api_usage(data):
@@ -498,8 +501,8 @@ def save_api_usage(data):
         API_USAGE_FILE.parent.mkdir(exist_ok=True)
         with open(API_USAGE_FILE, 'w') as f:
             json.dump(data, f)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[WARN] API 사용량 저장 실패: {e}")
 
 def increment_api_call(news_count=0):
     """API 호출 횟수 증가"""
@@ -512,7 +515,7 @@ def increment_api_call(news_count=0):
 def get_api_usage_info():
     """API 사용량 정보 반환"""
     data = load_api_usage()
-    daily_limit = 25000  # 네이버 API 일일 한도
+    daily_limit = NAVER_API_DAILY_LIMIT
     calls = data.get('calls', 0)
     remaining = max(0, daily_limit - calls)
     return {
@@ -547,19 +550,22 @@ def get_naver_news(keyword, display=20, sort='date', config: Optional[NewsCollec
     
     try:
         response = urllib.request.urlopen(request)
-        rescode = response.getcode()
-        
-        if(rescode == 200):
-            response_body = response.read()
-            result = json.loads(response_body.decode('utf-8'))
-            # API 호출 기록
-            news_count = len(result.get('items', [])) if result else 0
-            increment_api_call(news_count)
-            return result
-        else:
-            print(f"[ERROR] Error Code: {rescode}")
-            increment_api_call(0)
-            return None
+        try:
+            rescode = response.getcode()
+
+            if(rescode == 200):
+                response_body = response.read()
+                result = json.loads(response_body.decode('utf-8'))
+                # API 호출 기록
+                news_count = len(result.get('items', [])) if result else 0
+                increment_api_call(news_count)
+                return result
+            else:
+                print(f"[ERROR] Error Code: {rescode}")
+                increment_api_call(0)
+                return None
+        finally:
+            response.close()
     except Exception as e:
         print(f"[ERROR] 네이버 API 요청 실패: {e}")
         return None

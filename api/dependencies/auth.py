@@ -107,7 +107,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             # Legacy SHA256 hash support for migration
             sha256_hash = hashlib.sha256(plain_password.encode()).hexdigest()
             return hmac.compare_digest(sha256_hash, hashed_password)
-    except Exception:
+    except Exception as e:
+        logger.warning("Password verification failed: %s", e)
         return False
 
 
@@ -116,7 +117,7 @@ def _fetch_user_dict(username: str) -> Optional[dict]:
     try:
         return _get_user_from_store(username)
     except Exception as e:
-        print(f"Error fetching user: {e}")
+        logger.error("Error fetching user '%s': %s", username, e)
         return None
 
 
@@ -143,8 +144,8 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
             try:
                 new_hash = hash_password(password)
                 _migrate_password_hash(user_data['username'], new_hash)
-            except Exception:
-                pass  # Migration failure is non-blocking
+            except Exception as e:
+                logger.warning("Password hash migration failed for '%s': %s", username, e)
 
         return User(
             id=user_data['id'],

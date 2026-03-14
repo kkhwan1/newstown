@@ -140,11 +140,15 @@ class GolftimesUploader(PlatformUploader):
             text_inputs = self.wait.until(
                 EC.presence_of_all_elements_located((By.XPATH, "//input[@type='text']"))
             )
+            if not text_inputs:
+                raise ValueError("로그인 폼에서 텍스트 입력 필드를 찾을 수 없습니다")
             id_input = text_inputs[0]
             id_input.clear()
             id_input.send_keys(user_id)
 
             pw_inputs = self._driver.find_elements(By.XPATH, "//input[@type='password']")
+            if not pw_inputs:
+                raise ValueError("로그인 폼에서 비밀번호 입력 필드를 찾을 수 없습니다")
             pw_input = pw_inputs[0]
             pw_input.clear()
             pw_input.send_keys(user_pw)
