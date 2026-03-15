@@ -233,7 +233,7 @@ def append_news_rows(sheet_url: str, rows: List[List[Any]]) -> int:
     caller last checked.
 
     Each element of rows should be a list of column values:
-        [title, content, link, category]
+        [title, content, link, category] or [title, content, link, category, pub_date]
 
     Args:
         sheet_url: Google Sheets URL.

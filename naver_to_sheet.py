@@ -1599,6 +1599,16 @@ def is_today_news(pub_date_str):
     except Exception:
         return False  # 파싱 실패시 제외
 
+def format_pub_date(pub_date_str):
+    """네이버 API pubDate를 '2026.03.15 18:04' 형식으로 변환"""
+    if not pub_date_str:
+        return ""
+    try:
+        dt = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %z')
+        return dt.astimezone(KST).strftime('%Y.%m.%d %H:%M')
+    except Exception:
+        return ""
+
 def get_db_titles():
     """DB에서 모든 뉴스 제목 가져오기 (deprecated - DB removed)"""
     return []
@@ -2207,9 +2217,10 @@ def main(config: Optional[NewsCollectorConfig] = None):
             title = item_data['title']
             description = item_data['description']
             link = item_data['link']
+            pub_date = item_data.get('pubDate', '')
             search_keyword = item_data.get('_search_keyword', '')
             category = item_data.get('_category', '')
-            
+
             try:
                 full_content = scrape_news_content(link)
                 if not full_content:
@@ -2219,6 +2230,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                     'description': description,
                     'link': link,
                     'content': full_content,
+                    'pubDate': pub_date,
                     '_search_keyword': search_keyword,
                     '_category': category,
                     'success': True
@@ -2229,6 +2241,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                     'description': description,
                     'link': link,
                     'content': description,
+                    'pubDate': pub_date,
                     '_search_keyword': search_keyword,
                     '_category': category,
                     'success': False,
@@ -2343,6 +2356,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                 result['content'],
                 result['link'],
                 category,
+                format_pub_date(result.get('pubDate', '')),
                 search_keyword
             ])
             count += 1
@@ -2366,10 +2380,10 @@ def main(config: Optional[NewsCollectorConfig] = None):
 
                 while retry_count < max_retries:
                     try:
-                        # 배치 저장 (append_rows 사용) - A~D열만 저장 (E열 검색키워드 제외)
-                        # table_range='A:D'로 A열부터 시작하도록 고정
-                        sheet_batch = [[row[0], row[1], row[2], row[3]] for row in batch]
-                        sheet.append_rows(sheet_batch, value_input_option='RAW', table_range='A:D')
+                        # 배치 저장 (append_rows 사용) - A~E열 저장 (F열 검색키워드 제외)
+                        # table_range='A:E'로 A열부터 시작하도록 고정
+                        sheet_batch = [[row[0], row[1], row[2], row[3], row[4]] for row in batch]
+                        sheet.append_rows(sheet_batch, value_input_option='RAW', table_range='A:E')
                         saved_count += len(batch)
                         print(f"   [OK] 배치 {batch_num}/{total_batches} 저장 완료 ({len(batch)}개, 총 {saved_count}/{len(rows_to_save)}개)")
                         

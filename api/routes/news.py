@@ -23,7 +23,7 @@ from api.schemas.news import NewsListResponse, NewsItem, NewsStatsResponse
 from api.dependencies.auth import User, get_current_user, get_current_admin_user
 from utils import sheet_client
 from utils.config_manager import get_config_manager
-from naver_to_sheet import is_today_news
+from naver_to_sheet import is_today_news, format_pub_date
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,8 @@ def _append_news_to_sheet(
             date_filtered += 1
             continue
 
-        rows_to_append.append([title, content, link, category])
+        formatted_date = format_pub_date(pub_date) if pub_date else ""
+        rows_to_append.append([title, content, link, category, formatted_date])
 
     actually_saved = sheet_client.append_news_rows(sheet_url, rows_to_append)
     extra_skipped = len(rows_to_append) - actually_saved
