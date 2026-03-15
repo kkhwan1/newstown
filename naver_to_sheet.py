@@ -2035,7 +2035,14 @@ def main(config: Optional[NewsCollectorConfig] = None):
             title = item['title'].replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
             description = item['description'].replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
             link = item['link']
-            
+
+            # 당일 뉴스 재검증 (1단계에서 누락될 수 있으므로 2단계에서도 확인)
+            pub_date = item.get('pubDate', '')
+            if pub_date and not is_today_news(pub_date):
+                filtered_count += 1
+                print(f"   ⏭️ 당일 뉴스 아님 (발행일: {pub_date}): {title[:50]}...")
+                continue
+
             # 운세 관련 뉴스 필터링 (제외)
             fortune_keywords = [
                 "운세", "별자리", "오늘의 운세", "내일의 운세", "주간 운세", "월간 운세",
@@ -2100,6 +2107,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                 'title': title,
                 'description': description,
                 'link': link,
+                'pubDate': item.get('pubDate', ''),
                 '_search_keyword': search_keyword,
                 '_category': category
             })
