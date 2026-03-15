@@ -2192,6 +2192,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                                 'title': title,
                                 'description': description,
                                 'link': link,
+                                'pubDate': pub_date,
                                 '_search_keyword': search_keyword
                             })
                             all_collected_titles.append(title)  # 배치 목록에도 추가
