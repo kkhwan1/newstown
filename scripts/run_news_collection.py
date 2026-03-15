@@ -102,6 +102,29 @@ def load_config():
         except Exception as e:
             log(f"Sheet URL 로드 실패: {e}", "ERROR")
 
+    # category_keywords가 없으면 ConfigManager에서 로드
+    if not config.get('category_keywords'):
+        try:
+            from utils.config_manager import get_config_manager
+            cm = get_config_manager()
+            config['category_keywords'] = cm._config.get('category_keywords', {})
+            if config['category_keywords']:
+                log("카테고리 키워드를 ConfigManager에서 로드함", "SUCCESS")
+        except Exception as e:
+            log(f"카테고리 키워드 로드 실패: {e}", "ERROR")
+
+    # keywords가 없으면 ConfigManager에서 로드
+    if not config.get('keywords'):
+        try:
+            from utils.config_manager import get_config_manager
+            cm = get_config_manager()
+            nc = cm.get_news_config()
+            config['keywords'] = nc.get('keywords', {})
+            if config['keywords']:
+                log("수집 키워드를 ConfigManager에서 로드함", "SUCCESS")
+        except Exception as e:
+            log(f"수집 키워드 로드 실패: {e}", "ERROR")
+
     return config
 
 
