@@ -1609,6 +1609,41 @@ def format_pub_date(pub_date_str):
     except Exception:
         return ""
 
+def is_today_content(text):
+    """본문이 오늘 사건을 다루는지 확인 (과거 날짜 보도 필터링)"""
+    if not text:
+        return True  # 본문 없으면 통과
+    today = datetime.now(KST)
+    today_day = today.day
+    today_month = today.month
+
+    # 본문 앞 300자에서 날짜 패턴 검색
+    preview = text[:300]
+
+    # 패턴: "N일 방송", "N일 자신의", "지난 N일", "N일 열린", "N일 진행" 등
+    date_patterns = re.findall(r'(\d{1,2})일', preview)
+    if not date_patterns:
+        return True  # 날짜 언급 없으면 통과
+
+    # "N월 N일" 패턴도 체크
+    month_day_patterns = re.findall(r'(\d{1,2})월\s*(\d{1,2})일', preview)
+    if month_day_patterns:
+        for month, day in month_day_patterns:
+            if int(month) == today_month and int(day) == today_day:
+                return True  # 오늘 날짜 명시적 언급 → 통과
+            elif int(month) != today_month or int(day) != today_day:
+                return False  # 다른 날짜 언급 → 과거 보도
+
+    # 단순 "N일" 패턴 (같은 월 가정)
+    for day_str in date_patterns:
+        day = int(day_str)
+        if day == today_day:
+            return True  # 오늘 날짜 → 통과
+        elif 1 <= day <= 31 and day != today_day:
+            return False  # 다른 날짜 → 과거 보도
+
+    return True
+
 def get_db_titles():
     """DB에서 모든 뉴스 제목 가져오기 (deprecated - DB removed)"""
     return []
@@ -2347,10 +2382,15 @@ def main(config: Optional[NewsCollectorConfig] = None):
             if not category:
                 category = config.keyword_category_map.get(search_keyword, '연애')
             
+            # 본문 날짜 필터링 (과거 사건 보도 제외)
+            if not is_today_content(result.get('content', '')):
+                print(f"   ⏭️ 과거 사건 보도 제외: {result['title'][:50]}...")
+                continue
+
             # 카테고리 통계 업데이트
             if category in category_stats:
                 category_stats[category] = category_stats.get(category, 0) + 1
-            
+
             # 데이터 수집 (나중에 배치 저장)
             rows_to_save.append([
                 result['title'],
