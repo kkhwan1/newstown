@@ -1600,12 +1600,12 @@ def is_today_news(pub_date_str):
         return False  # 파싱 실패시 제외
 
 def format_pub_date(pub_date_str):
-    """네이버 API pubDate를 '2026.03.15 18:04' 형식으로 변환"""
+    """네이버 API pubDate를 '260315_18:04' 형식으로 변환"""
     if not pub_date_str:
         return ""
     try:
         dt = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %z')
-        return dt.astimezone(KST).strftime('%Y.%m.%d %H:%M')
+        return dt.astimezone(KST).strftime('%y%m%d_%H:%M')
     except Exception:
         return ""
 
