@@ -1787,46 +1787,86 @@ const SettingsHandler = {
                     <label>일반</label>
                     ${renderTags(keywords.general, category, 'general')}
                 </div>
+                <button type="button" class="btn btn-primary kw-save-cat-btn" data-category="${escapeHTML(category)}" style="margin-top:6px;font-size:12px;padding:4px 12px;">${escapeHTML(category)} 저장</button>
             </div>
         `).join('');
 
         // Event delegation for tag add/remove (remove old listeners to prevent accumulation)
         if (this._kwClickHandler) container.removeEventListener('click', this._kwClickHandler);
         if (this._kwKeydownHandler) container.removeEventListener('keydown', this._kwKeydownHandler);
+        if (this._kwKeyupHandler) container.removeEventListener('keyup', this._kwKeyupHandler);
 
         this._kwClickHandler = (e) => {
-            const btn = e.target.closest('.kw-tag button');
-            if (btn) {
-                btn.parentElement.remove();
-                this._autoSaveKeywords().catch(err =>
-                    Utils.showToast(err.message || '키워드 저장 실패', 'error')
-                );
+            // Delete tag
+            const delBtn = e.target.closest('.kw-tag button');
+            if (delBtn) {
+                delBtn.parentElement.remove();
+                this._autoSaveKeywords()
+                    .then(() => Utils.showToast('삭제됨', 'success'))
+                    .catch(err => Utils.showToast(err.message || '키워드 저장 실패', 'error'));
+                return;
+            }
+            // Per-category save button
+            const catBtn = e.target.closest('.kw-save-cat-btn');
+            if (catBtn) {
+                this._autoSaveKeywords()
+                    .then(() => Utils.showToast(`${catBtn.dataset.category} 키워드 저장 완료`, 'success'))
+                    .catch(err => Utils.showToast(err.message || '키워드 저장 실패', 'error'));
             }
         };
+        const addTagFromInput = (input) => {
+            const val = input.value.trim();
+            if (!val) return;
+            const wrap = input.closest('.kw-tags-wrap');
+            const tag = document.createElement('span');
+            tag.className = 'kw-tag';
+            tag.dataset.category = input.dataset.category;
+            tag.dataset.type = input.dataset.type;
+            tag.innerHTML = `${escapeHTML(val)}<button type="button" title="삭제">&times;</button>`;
+            wrap.insertBefore(tag, input);
+            input.value = '';
+            this._autoSaveKeywords().catch(err =>
+                Utils.showToast(err.message || '키워드 저장 실패', 'error')
+            );
+        };
+
         this._kwKeydownHandler = (e) => {
-            if (e.key === 'Enter' && e.target.classList.contains('kw-add-input')) {
+            if (e.key === 'Enter' && !e.isComposing && e.target.classList.contains('kw-add-input')) {
                 e.preventDefault();
-                const val = e.target.value.trim();
-                if (!val) return;
-                const wrap = e.target.closest('.kw-tags-wrap');
-                const tag = document.createElement('span');
-                tag.className = 'kw-tag';
-                tag.dataset.category = e.target.dataset.category;
-                tag.dataset.type = e.target.dataset.type;
-                tag.innerHTML = `${escapeHTML(val)}<button type="button" title="삭제">&times;</button>`;
-                wrap.insertBefore(tag, e.target);
-                e.target.value = '';
-                this._autoSaveKeywords().catch(err =>
-                    Utils.showToast(err.message || '키워드 저장 실패', 'error')
-                );
+                addTagFromInput(e.target);
+                e.target._enterHandled = true;
             }
+        };
+        // Mobile IME fallback: keydown fires keyCode 229 during composition, keyup fires after
+        this._kwKeyupHandler = (e) => {
+            if (e.key === 'Enter' && e.target.classList.contains('kw-add-input') && !e.target._enterHandled) {
+                addTagFromInput(e.target);
+            }
+            if (e.target._enterHandled) e.target._enterHandled = false;
         };
 
         container.addEventListener('click', this._kwClickHandler);
         container.addEventListener('keydown', this._kwKeydownHandler);
+        container.addEventListener('keyup', this._kwKeyupHandler);
+    },
+
+    _flushPendingInputs() {
+        document.querySelectorAll('.kw-add-input').forEach(input => {
+            const val = input.value.trim();
+            if (!val) return;
+            const wrap = input.closest('.kw-tags-wrap');
+            const tag = document.createElement('span');
+            tag.className = 'kw-tag';
+            tag.dataset.category = input.dataset.category;
+            tag.dataset.type = input.dataset.type;
+            tag.innerHTML = `${escapeHTML(val)}<button type="button" title="삭제">&times;</button>`;
+            wrap.insertBefore(tag, input);
+            input.value = '';
+        });
     },
 
     async _autoSaveKeywords() {
+        this._flushPendingInputs();
         const categoryKeywords = {
             '연애': { core: [], general: [] },
             '경제': { core: [], general: [] },
