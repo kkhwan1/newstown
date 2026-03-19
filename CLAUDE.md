@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Korean news automation: Naver API → Google Sheets → multi-platform auto-upload (Golf Times, Bizwnews). FastAPI backend + HTML/JS SPA dashboard.
 
 **Production**: `root@129.212.236.253` (port 8001), timezone `Asia/Seoul`
-**Dashboard**: `https://warm-bargain-shoulder-maker.trycloudflare.com/dashboard` (Cloudflare Quick Tunnel — URL changes on cloudflared restart)
+**Dashboard**: `https://compromise-finest-dinner-getting.trycloudflare.com/dashboard` (Cloudflare Quick Tunnel — URL changes on cloudflared restart)
 **Direct access**: `http://129.212.236.253:8001/dashboard` (stable, no HTTPS)
 
 ## Commands
@@ -26,9 +26,9 @@ No test framework, linter, or CI/CD. Manual test helpers in `scripts/test_*.py`.
 ## Architecture
 
 ```
-naver_to_sheet.py → Naver API → Google Sheets (A-D)
+naver_to_sheet.py → Naver API → Google Sheets (A-D, E=pubDate)
                                      ↓
-                     Make.com fills E column (AI-generated)
+                     Make.com fills platform AI columns (F-G, J-K)
                                      ↓
         Upload monitor reads platform-specific columns → Uploader (Selenium) → Platform site → marks completed column '완료'
                                      ↓
@@ -40,17 +40,19 @@ naver_to_sheet.py → Naver API → Google Sheets (A-D)
 | Col | Letter | Content |
 |-----|--------|---------|
 | 1-4 | A-D | 제목, 본문, 링크, 카테고리 (Naver API) |
-| 5 | E | AI 제목 (Make.com) |
-| 6-8 | F-H | golftimes 제목, 본문, **완료** |
-| 10-12 | J-L | bizwnews 제목, 본문, **완료** |
+| 5 | E | 뉴스 발행시점 (`260315_18:04` 형식, `format_pub_date()`) |
+| 6-8 | F-H | golftimes AI제목, AI본문, **완료** |
+| 10-12 | J-L | bizwnews AI제목, AI본문, **완료** |
 
 Platform-specific columns are configured in `upload_platforms` config. **Do not change these values without verifying the actual sheet layout.**
 
-**No database** — JSON files (`config/`) + Google Sheets only.
+**No database** — JSON files (`config/`) + Google Sheets only. (Legacy `tynewsauto.db`, `.db-shm`, `.db-wal` files remain in project root but are unused — safe to delete.)
 
 **Process management**: `ProcessManager` (singleton) spawns `scripts/run_*.py` via subprocess with `start_new_session=True`. Config passed as `PROCESS_CONFIG` env var (JSON). File-based status at `{tempdir}/tynewsauto/process_status.json` survives API restarts; validates PIDs on init to discard stale entries.
 
-**API**: All REST under `/api/`. WebSocket at `/ws/logs?token=JWT`. SPA at `/dashboard`, root `/` is health check. Routes in `api/routes/`: auth, config, process, news, sync, logs, admin, platforms, usage. Note: `/stop-all` route must be declared before `/{process_name}` wildcard in `process.py`.
+**API**: All REST under `/api/`. WebSocket at `/ws/logs?token=JWT`. SPA at `/dashboard`, root `/` is health check. Routes in `api/routes/`: auth, config, process, news, sync, logs, admin, platforms, usage. Note: `/stop-all` route must be declared before `/{process_name}` wildcard in `process.py`. `SecurityHeadersMiddleware` in `api/main.py` adds CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy headers.
+
+**Audit logging**: `utils/logger.py::audit_log()` writes JSON audit trail to `logs/audit.log` for admin actions (login, logout, password_change, process_start/stop, config_change). Separate from process activity logs.
 
 **Auth**: Custom HMAC-SHA256 token (format: `username:timestamp:expiry:signature`), bcrypt passwords in `config/users.json`. Roles: `admin`/`user`. Default: `admin123/admin17730`. `user` role hides Naver API settings, user management, and API usage on the frontend only — all API endpoints except `admin.py` (user CRUD) are accessible to both roles. Rate limit: 5/60s on login (in-memory, per-worker).
 
@@ -133,6 +135,8 @@ Golftimes has two modes via `config.extra_params.mode`: `user` (default) / `admi
 **재검색 루프** (`MAX_ROUNDS = 3`): 중복 제외로 카테고리 목표 미달 시 최대 3라운드 재검색. 라운드마다 `display` 수를 증가시켜 (`search_count * (round_num + 1)`, max 100) 더 많은 결과에서 비중복 뉴스를 찾음. 키워드 순서도 라운드마다 셔플.
 
 **인물 제한**: `MAX_PERSON_NEWS = 3` — 같은 인물 뉴스는 배치당 최대 3건. NER로 인물명 추출, `person_counter`로 추적.
+
+**당일 뉴스 필터링**: `is_today_news(pubDate)` — Naver API pubDate를 KST로 변환해 당일 여부 확인. `is_today_content(text)` — 본문 앞 300자에서 `N일` 패턴을 찾아 과거 사건 보도 필터링 (예: 오늘 발행됐지만 "14일 방송된" 기사 제외). `format_pub_date(pubDate)` — `'Sun, 15 Mar 2026 10:30:00 +0900'` → `'260315_10:30'` 변환, E열에 저장.
 
 ## Naver API Gotcha
 

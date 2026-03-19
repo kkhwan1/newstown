@@ -548,8 +548,12 @@ const DashboardHandler = {
                 saveKeywordsBtn,
                 'click',
                 async () => {
-                    await SettingsHandler._autoSaveKeywords();
-                    Utils.showToast('키워드 설정이 저장되었습니다', 'success');
+                    try {
+                        await SettingsHandler._autoSaveKeywords();
+                        Utils.showToast('키워드 설정이 저장되었습니다', 'success');
+                    } catch (error) {
+                        Utils.showToast(error.message || '키워드 저장 실패', 'error');
+                    }
                 }
             );
         }
@@ -1786,36 +1790,48 @@ const SettingsHandler = {
             </div>
         `).join('');
 
-        // Event delegation for tag add/remove
-        container.addEventListener('click', (e) => {
+        // Event delegation for tag add/remove (remove old listeners to prevent accumulation)
+        if (this._kwClickHandler) container.removeEventListener('click', this._kwClickHandler);
+        if (this._kwKeydownHandler) container.removeEventListener('keydown', this._kwKeydownHandler);
+
+        this._kwClickHandler = (e) => {
             const btn = e.target.closest('.kw-tag button');
             if (btn) {
                 btn.parentElement.remove();
-                this._autoSaveKeywords();
+                this._autoSaveKeywords().catch(err =>
+                    Utils.showToast(err.message || '키워드 저장 실패', 'error')
+                );
             }
-        });
-        container.addEventListener('keydown', (e) => {
+        };
+        this._kwKeydownHandler = (e) => {
             if (e.key === 'Enter' && e.target.classList.contains('kw-add-input')) {
                 e.preventDefault();
                 const val = e.target.value.trim();
                 if (!val) return;
                 const wrap = e.target.closest('.kw-tags-wrap');
-                const cat = e.target.dataset.category;
-                const type = e.target.dataset.type;
                 const tag = document.createElement('span');
                 tag.className = 'kw-tag';
-                tag.dataset.category = cat;
-                tag.dataset.type = type;
+                tag.dataset.category = e.target.dataset.category;
+                tag.dataset.type = e.target.dataset.type;
                 tag.innerHTML = `${escapeHTML(val)}<button type="button" title="삭제">&times;</button>`;
                 wrap.insertBefore(tag, e.target);
                 e.target.value = '';
-                this._autoSaveKeywords();
+                this._autoSaveKeywords().catch(err =>
+                    Utils.showToast(err.message || '키워드 저장 실패', 'error')
+                );
             }
-        });
+        };
+
+        container.addEventListener('click', this._kwClickHandler);
+        container.addEventListener('keydown', this._kwKeydownHandler);
     },
 
     async _autoSaveKeywords() {
-        const categoryKeywords = {};
+        const categoryKeywords = {
+            '연애': { core: [], general: [] },
+            '경제': { core: [], general: [] },
+            '스포츠': { core: [], general: [] }
+        };
         document.querySelectorAll('.kw-tag').forEach(tag => {
             const cat = tag.dataset.category;
             const type = tag.dataset.type;
@@ -1823,12 +1839,8 @@ const SettingsHandler = {
             const text = tag.textContent.replace('×', '').trim();
             if (text) categoryKeywords[cat][type].push(text);
         });
-        try {
-            await API.updateConfig('category_keywords', categoryKeywords);
-            Utils.clearCache();
-        } catch (error) {
-            Utils.showToast(error.message || '키워드 저장 실패', 'error');
-        }
+        await API.updateConfig('category_keywords', categoryKeywords);
+        Utils.clearCache();
     },
 
     _getCategoryDisplayName(category) {
