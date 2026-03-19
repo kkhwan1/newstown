@@ -1787,7 +1787,7 @@ const SettingsHandler = {
                     <label>일반</label>
                     ${renderTags(keywords.general, category, 'general')}
                 </div>
-                <button type="button" class="btn btn-primary kw-save-cat-btn" data-category="${escapeHTML(category)}" style="margin-top:6px;font-size:12px;padding:4px 12px;">${escapeHTML(category)} 저장</button>
+                <button type="button" class="btn btn-primary kw-save-cat-btn" data-category="${escapeHTML(category)}" style="margin-top:6px;font-size:12px;padding:4px 12px;">키워드 저장</button>
             </div>
         `).join('');
 
@@ -1839,10 +1839,11 @@ const SettingsHandler = {
         };
         // Mobile IME fallback: keydown fires keyCode 229 during composition, keyup fires after
         this._kwKeyupHandler = (e) => {
-            if (e.key === 'Enter' && e.target.classList.contains('kw-add-input') && !e.target._enterHandled) {
+            if (e.key !== 'Enter' || !e.target.classList.contains('kw-add-input')) return;
+            if (!e.target._enterHandled) {
                 addTagFromInput(e.target);
             }
-            if (e.target._enterHandled) e.target._enterHandled = false;
+            e.target._enterHandled = false;
         };
 
         container.addEventListener('click', this._kwClickHandler);
@@ -1866,6 +1867,9 @@ const SettingsHandler = {
     },
 
     async _autoSaveKeywords() {
+        if (this._saveInFlight) return;
+        this._saveInFlight = true;
+        try {
         this._flushPendingInputs();
         const categoryKeywords = {
             '연애': { core: [], general: [] },
@@ -1881,6 +1885,9 @@ const SettingsHandler = {
         });
         await API.updateConfig('category_keywords', categoryKeywords);
         Utils.clearCache();
+        } finally {
+            this._saveInFlight = false;
+        }
     },
 
     _getCategoryDisplayName(category) {
