@@ -55,10 +55,10 @@ DASHBOARD_CONFIG_PATH = PROJECT_ROOT / 'config' / 'dashboard_config.json'
 # 한국 표준시 (KST, UTC+9)
 KST = timezone(timedelta(hours=9))
 
-# 중복 판정 임계값 (통합 상수) — 강화됨
-DEDUP_TITLE_THRESHOLD = 0.25
-DEDUP_KEYWORD_THRESHOLD = 0.30
-DEDUP_CONTENT_THRESHOLD = 0.30
+# 중복 판정 임계값 (통합 상수) — 최대 강화
+DEDUP_TITLE_THRESHOLD = 0.20
+DEDUP_KEYWORD_THRESHOLD = 0.25
+DEDUP_CONTENT_THRESHOLD = 0.25
 
 # 네이버 API 일일 호출 한도
 NAVER_API_DAILY_LIMIT = 25000
@@ -1670,17 +1670,19 @@ def get_db_titles():
     return []
 
 def extract_key_phrases(text):
-    """핵심 키워드/구절 추출 (중복 판별용)"""
+    """핵심 키워드/구절 추출 (중복 판별용) — 강화: 1글자 핵심어 + trigram"""
     if not text:
         return set()
     normalized = normalize_text(text)
     words = normalized.split()
-    # 2글자 이상 단어만 추출
-    key_words = set(w for w in words if len(w) >= 2)
-    # 연속 2단어 조합도 추가 (bigram)
+    # 1글자 이상 단어 추출 (한글 핵심어: 금, 유, 주 등)
+    key_words = set(w for w in words if len(w) >= 1)
+    # 연속 2단어 조합 (bigram)
     for i in range(len(words) - 1):
-        if len(words[i]) >= 2 and len(words[i+1]) >= 2:
-            key_words.add(words[i] + ' ' + words[i+1])
+        key_words.add(words[i] + ' ' + words[i+1])
+    # 연속 3단어 조합 (trigram)
+    for i in range(len(words) - 2):
+        key_words.add(words[i] + ' ' + words[i+1] + ' ' + words[i+2])
     return key_words
 
 
@@ -1727,22 +1729,30 @@ def extract_proper_nouns(text):
 
 
 def is_same_topic(title1, content1, title2, content2):
-    """같은 주제/인물에 대한 기사인지 확인"""
-    # 고유명사 추출
+    """같은 주제/인물에 대한 기사인지 확인 — 강화: 핵심 단어 교집합 체크"""
+    # 1. 고유명사 추출
     nouns1 = extract_proper_nouns(title1 + " " + (content1 or ""))
     nouns2 = extract_proper_nouns(title2 + " " + (content2 or ""))
-    
-    if not nouns1 or not nouns2:
-        return False
-    
-    # 공통 고유명사가 있으면 같은 주제
-    common_nouns = nouns1.intersection(nouns2)
-    if common_nouns:
-        # 2글자 이상 인물명이 있으면 같은 주제
-        for noun in common_nouns:
-            if re.match(r'^[가-힣]{2,4}$', noun):
+
+    if nouns1 and nouns2:
+        common_nouns = nouns1.intersection(nouns2)
+        if common_nouns:
+            for noun in common_nouns:
+                if re.match(r'^[가-힣]{2,4}$', noun):
+                    return True
+            if len(common_nouns) >= 1:
                 return True
-        if len(common_nouns) >= 1:  # 1개 이상 공통 고유명사
+
+    # 2. 제목 핵심 단어(2글자+) 교집합 — 50% 이상이면 같은 주제
+    words1 = set(w for w in normalize_text(title1).split() if len(w) >= 2)
+    words2 = set(w for w in normalize_text(title2).split() if len(w) >= 2)
+    if words1 and words2:
+        common = words1.intersection(words2)
+        smaller = min(len(words1), len(words2))
+        if smaller > 0 and len(common) / smaller >= 0.50:
+            return True
+        # 3개 이상 핵심 단어가 겹치면 무조건 같은 주제
+        if len(common) >= 3:
             return True
 
     return False
@@ -1776,12 +1786,20 @@ def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None,
                 if keyword_overlap >= DEDUP_KEYWORD_THRESHOLD:
                     return (True, keyword_overlap, title)
 
-        # 3. 고유명사 기반 같은 주제 체크
+        # 3. 제목 핵심 단어(2글자+) 3개 이상 겹침 → 무조건 중복
+        new_core_words = set(w for w in new_normalized.split() if len(w) >= 2)
+        existing_core_words = set(w for w in existing_normalized.split() if len(w) >= 2)
+        if new_core_words and existing_core_words:
+            core_common = new_core_words.intersection(existing_core_words)
+            if len(core_common) >= 3:
+                return (True, len(core_common) / max(len(new_core_words), 1), title)
+
+        # 4. 고유명사 기반 같은 주제 체크
         existing_content = db_contents[i] if db_contents and i < len(db_contents) else None
         if is_same_topic(new_title, new_content, title, existing_content):
             return (True, 0.5, title)
 
-        # 4. 본문 유사도 체크
+        # 5. 본문 유사도 체크
         if new_content and existing_content:
             content_similarity = calculate_similarity(
                 normalize_text(new_content[:500]),  # 앞부분 500자만 비교 (성능)
@@ -1887,14 +1905,20 @@ def check_duplicate_in_cache(existing_data, link, title=None, content=None):
             if similarity >= DEDUP_TITLE_THRESHOLD:
                 return True
             
-            # 핵심 키워드 중복률 체크 (40% 이상이면 중복)
+            # 핵심 키워드 중복률 체크
             existing_phrases = extract_key_phrases(existing_title)
             if new_phrases and existing_phrases:
                 common = new_phrases.intersection(existing_phrases)
                 smaller = min(len(new_phrases), len(existing_phrases))
                 if smaller > 0 and len(common) / smaller >= DEDUP_KEYWORD_THRESHOLD:
                     return True
-            
+
+            # 제목 핵심 단어(2글자+) 3개 이상 겹침 → 무조건 중복
+            new_core = set(w for w in normalized_new_title.split() if len(w) >= 2)
+            ex_core = set(w for w in normalized_existing_title.split() if len(w) >= 2)
+            if new_core and ex_core and len(new_core.intersection(ex_core)) >= 3:
+                return True
+
             # 고유명사 기반 같은 주제 체크
             existing_content = existing_data.get('contents', [None] * len(existing_data['titles']))
             ex_content = existing_content[i] if i < len(existing_content) else None
