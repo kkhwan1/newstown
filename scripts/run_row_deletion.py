@@ -49,8 +49,8 @@ _shutdown_event = threading.Event()
 
 
 # 플랫폼별 완료 열 (1-based)
-# H열(8) = golftimes 완료, L열(12) = bizwnews 완료
-COMPLETED_COLUMNS = [8, 12]  # 모든 열이 '완료'일 때만 행 삭제
+# H열(8) = golftimes 완료, L열(12) = bizwnews 완료, P열(16) = redian 완료, T열(20) = dailypop 완료
+COMPLETED_COLUMNS = [8, 12, 16, 20]  # 모든 열이 '완료'일 때만 행 삭제
 
 # 플랫폼별 설정
 PLATFORM_CONFIGS = {

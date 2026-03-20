@@ -26,6 +26,16 @@ from .bizwnews import (
     upload_to_bizwnews
 )
 
+from .redian import (
+    RedianUploader,
+    upload_to_redian
+)
+
+from .dailypop import (
+    DailypopUploader,
+    upload_to_dailypop
+)
+
 __all__ = [
     # Base classes
     'PlatformUploader',
@@ -36,10 +46,14 @@ __all__ = [
     # Platform implementations
     'GolftimesUploader',
     'BizwnewsUploader',
+    'RedianUploader',
+    'DailypopUploader',
 
     # Convenience functions
     'upload_to_golftimes',
     'upload_to_bizwnews',
+    'upload_to_redian',
+    'upload_to_dailypop',
 
     # Factory
     'create_uploader',
@@ -65,6 +79,8 @@ def create_uploader(platform_name: str, config: dict) -> PlatformUploader:
     platform_map = {
         'golftimes': GolftimesUploader,
         'bizwnews': BizwnewsUploader,
+        'redian': RedianUploader,
+        'dailypop': DailypopUploader,
     }
 
     uploader_class = platform_map.get(platform_name.lower())

@@ -703,7 +703,13 @@ const DashboardHandler = {
                     config.selected_platforms = selected;
                     config.upload_platforms = platforms;
                     config.sheet_url = fullConfig.google_sheet?.url || '';
-                    config.golftimes = fullConfig.golftimes || {};
+                    // 모든 플랫폼 credentials를 config에 추가
+                    Object.values(platforms).forEach(p => {
+                        const section = p.credentials_section;
+                        if (section && fullConfig[section]) {
+                            config[section] = fullConfig[section];
+                        }
+                    });
                     console.log('[DEBUG] Upload config:', { selected, platformsKeys: Object.keys(platforms), sheet_url: !!config.sheet_url });
                     // 업로드 시작 전 시트 동기화 확인
                     try {
@@ -1711,6 +1717,18 @@ const SettingsHandler = {
             document.getElementById('bizwnews-pw').value = config.bizwnews.site_pw || '';
         }
 
+        // Redian credentials
+        if (config.redian) {
+            document.getElementById('redian-id').value = config.redian.site_id || '';
+            document.getElementById('redian-pw').value = config.redian.site_pw || '';
+        }
+
+        // DailyPop credentials
+        if (config.dailypop) {
+            document.getElementById('dailypop-id').value = config.dailypop.site_id || '';
+            document.getElementById('dailypop-pw').value = config.dailypop.site_pw || '';
+        }
+
         // Upload intervals
         if (config.upload_monitor) {
             document.getElementById('check-interval').value = config.upload_monitor.check_interval || 30;
@@ -2049,6 +2067,44 @@ const SettingsHandler = {
                 try {
                     await API.setConfig('bizwnews', 'site_id', id);
                     await API.setConfig('bizwnews', 'site_pw', pw);
+                    Utils.clearCache();
+                    Utils.showToast('저장되었습니다', 'success');
+                } catch (error) {
+                    Utils.showToast(error.message, 'error');
+                }
+            }
+        );
+
+        // Save Redian credentials
+        AppState.trackListener(
+            this.handlerName,
+            document.getElementById('save-redian-btn'),
+            'click',
+            async () => {
+                const id = document.getElementById('redian-id').value;
+                const pw = document.getElementById('redian-pw').value;
+                try {
+                    await API.setConfig('redian', 'site_id', id);
+                    await API.setConfig('redian', 'site_pw', pw);
+                    Utils.clearCache();
+                    Utils.showToast('저장되었습니다', 'success');
+                } catch (error) {
+                    Utils.showToast(error.message, 'error');
+                }
+            }
+        );
+
+        // Save DailyPop credentials
+        AppState.trackListener(
+            this.handlerName,
+            document.getElementById('save-dailypop-btn'),
+            'click',
+            async () => {
+                const id = document.getElementById('dailypop-id').value;
+                const pw = document.getElementById('dailypop-pw').value;
+                try {
+                    await API.setConfig('dailypop', 'site_id', id);
+                    await API.setConfig('dailypop', 'site_pw', pw);
                     Utils.clearCache();
                     Utils.showToast('저장되었습니다', 'success');
                 } catch (error) {

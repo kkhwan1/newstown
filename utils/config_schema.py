@@ -156,6 +156,12 @@ class AppConfig(BaseModel):
     bizwnews: PlatformCredentials = Field(
         default=PlatformCredentials(site_id="", site_pw="")
     )
+    redian: PlatformCredentials = Field(
+        default=PlatformCredentials(site_id="tymedia", site_pw="")
+    )
+    dailypop: PlatformCredentials = Field(
+        default=PlatformCredentials(site_id="dodo1403", site_pw="")
+    )
     upload_platforms: Dict[str, PlatformConfig] = Field(
         default_factory=lambda: {
             "golftimes": PlatformConfig(
@@ -173,6 +179,22 @@ class AppConfig(BaseModel):
                 content_column=10,
                 completed_column=11,
                 credentials_section="bizwnews"
+            ),
+            "redian": PlatformConfig(
+                enabled=False,
+                display_name="레디안",
+                title_column=14,
+                content_column=15,
+                completed_column=16,
+                credentials_section="redian"
+            ),
+            "dailypop": PlatformConfig(
+                enabled=False,
+                display_name="데일리팝",
+                title_column=18,
+                content_column=19,
+                completed_column=20,
+                credentials_section="dailypop"
             )
         }
     )

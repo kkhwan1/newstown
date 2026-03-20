@@ -169,6 +169,14 @@ class ConfigManager:
             "site_id": "",
             "site_pw": ""
         },
+        "redian": {
+            "site_id": "tymedia",
+            "site_pw": ""
+        },
+        "dailypop": {
+            "site_id": "dodo1403",
+            "site_pw": ""
+        },
         "upload_platforms": {
             "golftimes": {
                 "enabled": False,
@@ -185,6 +193,22 @@ class ConfigManager:
                 "content_column": 10,
                 "completed_column": 11,
                 "credentials_section": "bizwnews"
+            },
+            "redian": {
+                "enabled": False,
+                "display_name": "레디안",
+                "title_column": 14,
+                "content_column": 15,
+                "completed_column": 16,
+                "credentials_section": "redian"
+            },
+            "dailypop": {
+                "enabled": False,
+                "display_name": "데일리팝",
+                "title_column": 18,
+                "content_column": 19,
+                "completed_column": 20,
+                "credentials_section": "dailypop"
             }
         }
     }
