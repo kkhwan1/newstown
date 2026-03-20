@@ -55,10 +55,10 @@ DASHBOARD_CONFIG_PATH = PROJECT_ROOT / 'config' / 'dashboard_config.json'
 # 한국 표준시 (KST, UTC+9)
 KST = timezone(timedelta(hours=9))
 
-# 중복 판정 임계값 (통합 상수)
-DEDUP_TITLE_THRESHOLD = 0.35
-DEDUP_KEYWORD_THRESHOLD = 0.40
-DEDUP_CONTENT_THRESHOLD = 0.40
+# 중복 판정 임계값 (통합 상수) — 강화됨
+DEDUP_TITLE_THRESHOLD = 0.25
+DEDUP_KEYWORD_THRESHOLD = 0.30
+DEDUP_CONTENT_THRESHOLD = 0.30
 
 # 네이버 API 일일 호출 한도
 NAVER_API_DAILY_LIMIT = 25000
@@ -1536,6 +1536,27 @@ def is_category_related(title, description, category):
     
     return False
 
+def normalize_url(url):
+    """URL 정규화 — 같은 기사의 다른 URL 변형을 통일"""
+    if not url:
+        return ""
+    url = url.strip()
+    # 쿼리 파라미터 중 tracking 관련 제거 (utm_, ref, from 등)
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    try:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        # tracking 파라미터 제거
+        clean_params = {k: v for k, v in params.items()
+                       if not k.startswith('utm_') and k not in ('ref', 'from', 'source', 'campaign', 'fbclid', 'gclid')}
+        clean_query = urlencode(clean_params, doseq=True)
+        normalized = urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, clean_query, ''))
+        # 끝의 슬래시 통일
+        return normalized.rstrip('/')
+    except Exception:
+        return url
+
+
 def normalize_text(text):
     """텍스트 정규화 (비교를 위해)"""
     if not text:
@@ -1717,11 +1738,11 @@ def is_same_topic(title1, content1, title2, content2):
     # 공통 고유명사가 있으면 같은 주제
     common_nouns = nouns1.intersection(nouns2)
     if common_nouns:
-        # 3글자 이상 인물명이 있으면 같은 주제 (2글자는 오탐 가능성 높음)
+        # 2글자 이상 인물명이 있으면 같은 주제
         for noun in common_nouns:
-            if re.match(r'^[가-힣]{3,4}$', noun):  # 3글자 이상 인물명만
+            if re.match(r'^[가-힣]{2,4}$', noun):
                 return True
-        if len(common_nouns) >= 2:  # 2개 이상 공통 고유명사
+        if len(common_nouns) >= 1:  # 1개 이상 공통 고유명사
             return True
 
     return False
@@ -1737,10 +1758,13 @@ def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None,
     for i, title in enumerate(db_titles):
         existing_normalized = normalize_text(title)
         
-        # 1. SequenceMatcher 유사도 체크 (40% 이상이면 중복)
+        # 1. SequenceMatcher + Jaccard 유사도 체크 (둘 중 하나라도 임계값 이상이면 중복)
         ratio = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
         if ratio >= threshold:
             return (True, ratio, title)
+        jaccard = calculate_similarity(new_normalized, existing_normalized)
+        if jaccard >= threshold:
+            return (True, jaccard, title)
         
         # 2. 핵심 키워드 중복률 체크 (40% 이상 키워드 겹치면 중복)
         existing_key_phrases = extract_key_phrases(title)
@@ -1794,9 +1818,10 @@ def load_existing_news(sheet):
             existing_contents = []
 
             for row in all_values[1:]:  # 헤더 제외
-                # 링크 저장 (C열, 인덱스 2)
+                # 링크 저장 (C열, 인덱스 2) — 정규화 적용
                 if len(row) > 2 and row[2] and row[2].strip():
                     existing_links.add(row[2].strip())
+                    existing_links.add(normalize_url(row[2].strip()))
 
                 # 제목 저장 (A열, 인덱스 0) + 본문 저장 (B열, 인덱스 1)
                 if len(row) > 0 and row[0] and row[0].strip():
@@ -1836,9 +1861,11 @@ def check_duplicate_in_cache(existing_data, link, title=None, content=None):
     if not existing_data:
         return False
     
-    # 1. 링크로 중복 체크 (가장 정확)
-    if link and link.strip() in existing_data['links']:
-        return True
+    # 1. 링크로 중복 체크 (가장 정확) — 정규화 적용
+    if link:
+        norm_link = normalize_url(link.strip())
+        if norm_link in existing_data['links'] or link.strip() in existing_data['links']:
+            return True
     
     # 2. 제목으로 중복 체크 (링크가 다른 경우 대비)
     if title and title.strip():
@@ -1848,11 +1875,15 @@ def check_duplicate_in_cache(existing_data, link, title=None, content=None):
         if normalized_new_title in existing_data['normalized_titles']:
             return True
         
-        # 제목 유사도 체크
+        # 제목 유사도 체크 (SequenceMatcher + Jaccard 병행)
         new_phrases = extract_key_phrases(title)
         for i, (existing_title, normalized_existing_title) in enumerate(zip(existing_data['titles'], existing_data['normalized_titles'])):
+            # SequenceMatcher
+            seq_ratio = SequenceMatcher(None, normalized_new_title, normalized_existing_title).ratio()
+            if seq_ratio >= DEDUP_TITLE_THRESHOLD:
+                return True
+            # Jaccard similarity
             similarity = calculate_similarity(normalized_new_title, normalized_existing_title)
-            # 유사도가 임계값 이상이면 중복으로 간주
             if similarity >= DEDUP_TITLE_THRESHOLD:
                 return True
             
@@ -2016,10 +2047,11 @@ def main(config: Optional[NewsCollectorConfig] = None):
                     if not is_today_news(pub_date):
                         continue
 
-                    if link in all_news_links:
+                    normalized_link = normalize_url(link)
+                    if normalized_link in all_news_links or link in all_news_links:
                         continue
 
-                    if check_duplicate_in_cache(existing_news_data, link, title):
+                    if check_duplicate_in_cache(existing_news_data, normalized_link, title):
                         continue
 
                     # 시트 기존 뉴스와 중복 체크
@@ -2043,7 +2075,7 @@ def main(config: Optional[NewsCollectorConfig] = None):
                     item['_search_keyword'] = keyword
                     item['_category'] = category
                     category_collected[category].append(item)
-                    all_news_links.add(link)
+                    all_news_links.add(normalized_link)
                     batch_collected_titles.append(title)  # 배치 목록에 추가
                     print(f"      [신규] {title[:40]}...")
 
