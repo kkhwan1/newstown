@@ -2459,6 +2459,41 @@ def main(config: Optional[NewsCollectorConfig] = None):
             count += 1
             print(f"[OK] [{category}] {idx}/{len(shuffled_news_results)} 준비 완료: {result['title'][:30]}...")
 
+        # 최종 중복 제거 (시트 저장 직전)
+        before_dedup = len(rows_to_save)
+        seen_links = set()
+        seen_titles = []
+        deduped_rows = []
+        for row in rows_to_save:
+            title, content, link = row[0], row[1], row[2]
+            norm_link = normalize_url(link)
+            # URL 중복
+            if norm_link in seen_links:
+                print(f"   [최종중복-URL] {title[:40]}...")
+                continue
+            # 제목 유사도 중복 (기존 저장 목록 대비)
+            norm_title = normalize_text(title)
+            is_dup = False
+            for st in seen_titles:
+                if SequenceMatcher(None, norm_title, st).ratio() >= 0.80:
+                    is_dup = True
+                    break
+                # 핵심단어 3개 겹침
+                w1 = set(w for w in norm_title.split() if len(w) >= 2)
+                w2 = set(w for w in st.split() if len(w) >= 2)
+                if w1 and w2 and len(w1 & w2) >= 3:
+                    is_dup = True
+                    break
+            if is_dup:
+                print(f"   [최종중복-제목] {title[:40]}...")
+                continue
+            seen_links.add(norm_link)
+            seen_titles.append(norm_title)
+            deduped_rows.append(row)
+        rows_to_save = deduped_rows
+        if before_dedup > len(rows_to_save):
+            print(f"   [최종중복제거] {before_dedup}개 → {len(rows_to_save)}개 ({before_dedup - len(rows_to_save)}개 제거)")
+
         # 배치 저장 (API 호출 최소화)
         print(f"\n[UPLOAD] 구글 시트 배치 저장 중... (총 {len(rows_to_save)}개)")
 
