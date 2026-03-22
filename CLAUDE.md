@@ -43,6 +43,8 @@ naver_to_sheet.py → Naver API → Google Sheets (A-D, E=pubDate)
 | 5 | E | 뉴스 발행시점 (`260315_18:04` 형식, `format_pub_date()`) |
 | 6-8 | F-H | golftimes AI제목, AI본문, **완료** |
 | 10-12 | J-L | bizwnews AI제목, AI본문, **완료** |
+| 14-16 | N-P | redian AI제목, AI본문, **완료** |
+| 18-20 | R-T | dailypop AI제목, AI본문, **완료** |
 
 Platform-specific columns are configured in `upload_platforms` config. **Do not change these values without verifying the actual sheet layout.**
 
@@ -66,7 +68,7 @@ Platform-specific columns are configured in `upload_platforms` config. **Do not 
 
 Platform config values (`title_column`, `content_column`, `completed_column`) in `config_schema.py` are **1-based** (`ge=1`). `run_upload_monitor.py` converts these to **0-based** on read (`raw_value - 1`) for array access. The `enumerate()` header-detection fallback is already 0-based. `sheet.update_cell(row, col, value)` expects 1-based — so when writing back, add 1 to 0-based indices. Array access from `sheet.get_all_values()` is always 0-based (`row[0]`=A).
 
-**Current production values**: golftimes=`6,7,8` (F,G,H), bizwnews=`10,11,12` (J,K,L). Row deletion hardcodes `COMPLETED_COLUMNS = [8, 12]` (H + L).
+**Current production values**: golftimes=`6,7,8` (F,G,H), bizwnews=`10,11,12` (J,K,L), redian=`14,15,16` (N,O,P), dailypop=`18,19,20` (R,S,T). Row deletion hardcodes `COMPLETED_COLUMNS = [8, 12, 16, 20]` (H + L + P + T).
 
 ## Critical: Credential Masking Flow
 
@@ -99,38 +101,53 @@ pm.start_process("news_collection", "scripts/run_news_collection.py", config={..
 
 ## Config Sections (`dashboard_config.json`)
 
-`news_collection` (keywords, display_count, sort) | `category_keywords` ({category}.core[], .general[]) | `upload_monitor` (check_interval, completed_column, concurrent_uploads) | `row_deletion` (delete_interval, max_delete_count) | `google_sheet` (url) | `naver_api` (client_id, client_secret) | `golftimes` (site_id, site_pw) | `bizwnews` (site_id, site_pw) | `upload_platforms` ({name}.enabled/title_column/content_column/completed_column/credentials_section/**allowed_categories**) | `news_schedule` (enabled, interval_hours). Pydantic schemas in `utils/config_schema.py`. Env vars override JSON via `ConfigManager._apply_env_overrides()`.
+`news_collection` (keywords, display_count, sort) | `category_keywords` ({category}.core[], .general[]) | `upload_monitor` (check_interval, completed_column, concurrent_uploads) | `row_deletion` (delete_interval, max_delete_count) | `google_sheet` (url) | `naver_api` (client_id, client_secret) | `golftimes` (site_id, site_pw) | `bizwnews` (site_id, site_pw) | `redian` (site_id, site_pw) | `dailypop` (site_id, site_pw) | `upload_platforms` ({name}.enabled/title_column/content_column/completed_column/credentials_section/**allowed_categories**) | `news_schedule` (enabled, interval_hours). Pydantic schemas in `utils/config_schema.py`. Env vars override JSON via `ConfigManager._apply_env_overrides()`.
 
 ## Platform Upload
 
-Two platforms sharing same CMS (different sites): **Golf Times** (`golftimes.py`, sections S1N5/S2N28) and **Bizwnews** (`bizwnews.py`, sections S1N2/S2N26). Both use Selenium + XPath (no `name` attrs on form inputs). Content via `CKEDITOR.instances['FCKeditor1'].setData(html)`.
+Four platforms sharing same CMS (NDSOFT, different sites):
 
-Golftimes has two modes via `config.extra_params.mode`: `user` (default) / `admin`. Bizwnews preserves CKEditor header (`[비즈월드]`) and footer (`[비즈월드=reporter]`) during content insertion.
+| Platform | File | Sections | URL | Notes |
+|----------|------|----------|-----|-------|
+| Golf Times | `golftimes.py` | S1N5/S2N28 | thegolftimes.co.kr | user/admin 모드 |
+| Bizwnews | `bizwnews.py` | S1N2/S2N26 | bizwnews.com | [비즈월드] 헤더/푸터 보존 |
+| Redian | `redian.py` | S1N10 (1차만) | redian.org → cms.redian.org | 2차 섹션 없음 |
+| DailyPop | `dailypop.py` | S1N10 (1차만) | dailypop.kr | 저장 버튼: `button.expanded.large` (success 없음) |
+
+All use Selenium + CKEditor (`FCKeditor1`). Content via `CKEDITOR.instances['FCKeditor1'].setData(html)`.
+
+Golftimes has two modes via `config.extra_params.mode`: `user` (default) / `admin`. Bizwnews preserves CKEditor header (`[비즈월드]`) and footer (`[비즈월드=reporter]`) during content insertion. Redian/DailyPop have no header/footer patterns.
 
 **Per-platform category filtering**: Each platform has `allowed_categories` (list of strings, empty=all). Upload monitor reads column D (category, 0-based index 3) and skips rows whose category is not in the list. Config example: `golftimes: ["연애","경제","스포츠"]`, `bizwnews: ["경제"]`. Dashboard shows category checkboxes per platform.
 
-**Row deletion**: `run_row_deletion.py` checks `COMPLETED_COLUMNS = [8, 12]` (H + L columns). Rows are deleted only when **all** platform completed columns contain "완료".
+**Row deletion**: `run_row_deletion.py` checks `COMPLETED_COLUMNS = [8, 12, 16, 20]` (H + L + P + T columns). Rows are deleted only when **all** platform completed columns contain "완료".
 
 **Platform factory**: To add a platform: (1) Create `utils/platforms/newname.py` inheriting `PlatformUploader` from `base.py`, (2) Implement `login()`, `upload(title, content, category)`, `from_config()`, (3) Register in `__init__.py::platform_map`, (4) Add credentials section + `PlatformConfig` entry in config. `DriverPool` in `__init__.py` provides Chrome WebDriver pooling for concurrent uploads.
 
 ## Critical: News Deduplication System
 
-`naver_to_sheet.py`의 뉴스 수집은 4단계 중복 판정 + 재검색 루프로 구성.
+`naver_to_sheet.py`의 뉴스 수집은 5단계 중복 판정 + 최종 저장 전 검증 + 재검색 루프로 구성.
 
 **중복 판정 순서** (각 뉴스 아이템마다):
-1. `check_duplicate_in_cache()` — 링크 + 제목 유사도 (시트 캐시 대비)
-2. `is_duplicate_in_db()` — 시트 기존 제목 대비 (`[시트중복]` 로그)
-3. `is_duplicate_in_db()` — 같은 배치 내 수집 제목 대비 (`[배치중복]` 로그)
-4. `is_news_excluded()` — 카테고리별 제외 키워드 매칭
+1. URL 정규화 (`normalize_url()`) + `all_news_links` set 비교
+2. `check_duplicate_in_cache()` — 링크 + 제목 유사도 (시트 캐시 대비, SequenceMatcher + Jaccard 병행)
+3. `is_duplicate_in_db()` — 시트 기존 제목 대비 (`[시트중복]` 로그)
+4. `is_duplicate_in_db()` — 같은 배치 내 수집 제목 대비 (`[배치중복]` 로그)
+5. `is_news_excluded()` — 카테고리별 제외 키워드 매칭
+
+**시트 저장 직전 최종 중복 제거**: `rows_to_save`를 시트에 쓰기 전 URL + 제목 유사도(80%) + 핵심단어 3개 겹침으로 최종 검증.
 
 **임계값** (`is_duplicate_in_db`, `check_duplicate_in_cache`):
 
 | 판정 | 임계값 | 비고 |
 |------|--------|------|
-| 제목 유사도 (SequenceMatcher) | ≥0.30 | `threshold` 파라미터 |
-| 핵심 키워드 겹침 | ≥0.40 | `extract_key_phrases()` 결과 비교 |
-| 본문 유사도 | ≥0.50 | 앞 500자 비교 (is_duplicate_in_db만) |
-| 고유명사 주제 | `is_same_topic()` | NER 기반 같은 주제 판별 |
+| 제목 유사도 (SequenceMatcher + Jaccard) | ≥0.20 | 둘 중 하나라도 초과 시 중복 |
+| 핵심 키워드 겹침 | ≥0.25 | `extract_key_phrases()` (1글자+ 단어, bigram, trigram) |
+| 핵심 단어(2글자+) 3개 겹침 | 무조건 중복 | 제목 내 핵심 명사 교집합 |
+| 본문 유사도 | ≥0.25 | 앞 500자 비교 (is_duplicate_in_db만) |
+| 고유명사 주제 | `is_same_topic()` | 2글자+ 인물명 1개 또는 핵심단어 교집합 50%+ |
+
+**URL 정규화**: `normalize_url()` — tracking 파라미터(utm_, ref, fbclid 등) 제거 후 비교. `load_existing_news()`에서도 기존 링크를 정규화하여 저장.
 
 **재검색 루프** (`MAX_ROUNDS = 3`): 중복 제외로 카테고리 목표 미달 시 최대 3라운드 재검색. 라운드마다 `display` 수를 증가시켜 (`search_count * (round_num + 1)`, max 100) 더 많은 결과에서 비중복 뉴스를 찾음. 키워드 순서도 라운드마다 셔플.
 
