@@ -2026,8 +2026,8 @@ def main(config: Optional[NewsCollectorConfig] = None):
     random.shuffle(keyword_list)
     print(f"   [RANDOM] 키워드 순서 랜덤 셔플 완료 ({len(keyword_list)}개)")
 
-    # 최대 3라운드 반복하여 목표 개수 채우기
-    MAX_ROUNDS = 3
+    # 목표 개수 충족까지 반복 (최대 10라운드, 새 뉴스 0개면 조기 종료)
+    MAX_ROUNDS = 10
     for round_num in range(MAX_ROUNDS):
         # 모든 카테고리가 채워졌으면 종료
         all_filled = all(
@@ -2037,12 +2037,15 @@ def main(config: Optional[NewsCollectorConfig] = None):
         if all_filled:
             break
 
+        # 이번 라운드 시작 전 수집 개수 기록 (조기 종료 판단용)
+        count_before_round = sum(len(v) for v in category_collected.values())
+
         if round_num > 0:
             random.shuffle(keyword_list)
             unfilled = [f"{cat}({len(category_collected[cat])}/{config.category_limits.get(cat, 0)})"
                         for cat in category_collected
                         if len(category_collected[cat]) < config.category_limits.get(cat, 0)]
-            print(f"\n[RETRY] 라운드 {round_num + 1}: 목표 미달 카테고리 추가 검색 [{', '.join(unfilled)}]")
+            print(f"\n[RETRY] 라운드 {round_num + 1}/{MAX_ROUNDS}: 목표 미달 카테고리 추가 검색 [{', '.join(unfilled)}]")
 
         # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
         for keyword, search_count in keyword_list:
@@ -2104,7 +2107,13 @@ def main(config: Optional[NewsCollectorConfig] = None):
                     print(f"      [신규] {title[:40]}...")
 
             time.sleep(0.5)
-    
+
+        # 이번 라운드에서 새로 수집된 뉴스가 없으면 더 검색해도 무의미 → 조기 종료
+        count_after_round = sum(len(v) for v in category_collected.values())
+        if round_num > 0 and count_after_round == count_before_round:
+            print(f"\n[STOP] 라운드 {round_num + 1}에서 새 뉴스 0개 → 추가 검색 중단")
+            break
+
     # 카테고리별 수집 결과 출력
     all_news_items = []
     print(f"\n[STAT] 카테고리별 수집 결과:")
