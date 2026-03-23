@@ -527,13 +527,14 @@ def get_api_usage_info():
         'usage_percent': round((calls / daily_limit) * 100, 1) if daily_limit > 0 else 0
     }
 
-def get_naver_news(keyword, display=20, sort='date', config: Optional[NewsCollectorConfig] = None):
+def get_naver_news(keyword, display=20, sort='date', start=1, config: Optional[NewsCollectorConfig] = None):
     """네이버 뉴스 검색 함수
 
     Args:
         keyword: 검색어
         display: 가져올 개수
         sort: 정렬 방식 ('date'=최신순, 'sim'=정확도순/검색량 높은 순)
+        start: 검색 시작 위치 (1~1000, 페이지네이션용)
         config: NewsCollectorConfig (선택적, 없으면 레거시 글로벌 변수 사용)
     """
     # config가 있으면 config 값 사용, 없으면 레거시 글로벌 변수 사용
@@ -541,8 +542,8 @@ def get_naver_news(keyword, display=20, sort='date', config: Optional[NewsCollec
     client_secret = config.naver_client_secret if config else NAVER_CLIENT_SECRET
 
     encText = urllib.parse.quote(keyword)
-    # 검색어, 출력 개수(display=10~100), 정렬(sim=정확도순/검색량 높은 순, date=날짜순/최신순)
-    url = f"https://openapi.naver.com/v1/search/news?query={encText}&display={display}&sort={sort}"
+    # 검색어, 출력 개수(display=10~100), 시작위치(start=1~1000), 정렬
+    url = f"https://openapi.naver.com/v1/search/news?query={encText}&display={display}&start={start}&sort={sort}"
 
     request = urllib.request.Request(url)
     request.add_header("X-Naver-Client-Id", client_id)
@@ -2026,93 +2027,84 @@ def main(config: Optional[NewsCollectorConfig] = None):
     random.shuffle(keyword_list)
     print(f"   [RANDOM] 키워드 순서 랜덤 셔플 완료 ({len(keyword_list)}개)")
 
-    # 목표 개수 충족까지 반복 (최대 10라운드, 새 뉴스 0개면 조기 종료)
-    MAX_ROUNDS = 10
-    for round_num in range(MAX_ROUNDS):
-        # 모든 카테고리가 채워졌으면 종료
-        all_filled = all(
-            len(category_collected[cat]) >= config.category_limits.get(cat, 0)
-            for cat in category_collected
-        )
-        if all_filled:
-            break
+    # 키워드별 페이지네이션: 목표 미달이면 다음 페이지를 계속 가져옴
+    MAX_PAGES = 5  # 키워드당 최대 5페이지 (100개씩 × 5 = 500건)
+    FETCH_SIZE = 100  # 한번에 가져올 개수 (Naver API 최대값)
 
-        # 이번 라운드 시작 전 수집 개수 기록 (조기 종료 판단용)
-        count_before_round = sum(len(v) for v in category_collected.values())
+    for keyword, search_count in keyword_list:
+        category = config.keyword_category_map.get(keyword, None)
+        if not category or category not in config.category_limits:
+            continue
 
-        if round_num > 0:
-            random.shuffle(keyword_list)
-            unfilled = [f"{cat}({len(category_collected[cat])}/{config.category_limits.get(cat, 0)})"
-                        for cat in category_collected
-                        if len(category_collected[cat]) < config.category_limits.get(cat, 0)]
-            print(f"\n[RETRY] 라운드 {round_num + 1}/{MAX_ROUNDS}: 목표 미달 카테고리 추가 검색 [{', '.join(unfilled)}]")
+        cat_limit = config.category_limits.get(category, 0)
+        if cat_limit <= 0 or len(category_collected[category]) >= cat_limit:
+            continue
 
-        # 각 키워드별로 뉴스 검색하고 카테고리별로 분류
-        for keyword, search_count in keyword_list:
-            category = config.keyword_category_map.get(keyword, None)
-            if not category or category not in config.category_limits:
-                continue
+        # 이 키워드에서 페이지를 넘기며 계속 검색
+        for page in range(MAX_PAGES):
+            if len(category_collected[category]) >= cat_limit:
+                break
 
-            cat_limit = config.category_limits.get(category, 0)
-            if cat_limit <= 0 or len(category_collected[category]) >= cat_limit:
-                continue
+            start_pos = 1 + (page * FETCH_SIZE)
+            if start_pos > 1000:  # Naver API start 최대값
+                break
 
-            # 라운드가 올라갈수록 더 많은 결과를 가져와서 비중복 뉴스를 찾을 확률 높임
-            fetch_count = min(search_count * (round_num + 1), 100)
-            print(f"   '{keyword}' 검색 중 (카테고리: {category}, 현재: {len(category_collected[category])}/{cat_limit}개, display={fetch_count})")
-            news_result = get_naver_news(keyword, display=fetch_count, sort=config.sort, config=config)
+            count_before = len(category_collected[category])
+            print(f"   '{keyword}' 검색 중 (카테고리: {category}, 현재: {count_before}/{cat_limit}개, start={start_pos})")
+            news_result = get_naver_news(keyword, display=FETCH_SIZE, sort=config.sort, start=start_pos, config=config)
 
-            if news_result and 'items' in news_result:
-                for item in news_result['items']:
-                    if len(category_collected[category]) >= cat_limit:
-                        break
+            if not news_result or 'items' not in news_result or len(news_result['items']) == 0:
+                break  # 결과 없음 → 다음 키워드로
 
-                    link = item.get('link', '').strip()
-                    title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                    pub_date = item.get('pubDate', '')
+            for item in news_result['items']:
+                if len(category_collected[category]) >= cat_limit:
+                    break
 
-                    if not is_today_news(pub_date):
-                        continue
+                link = item.get('link', '').strip()
+                title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                pub_date = item.get('pubDate', '')
 
-                    normalized_link = normalize_url(link)
-                    if normalized_link in all_news_links or link in all_news_links:
-                        continue
+                if not is_today_news(pub_date):
+                    continue
 
-                    if check_duplicate_in_cache(existing_news_data, normalized_link, title):
-                        continue
+                normalized_link = normalize_url(link)
+                if normalized_link in all_news_links or link in all_news_links:
+                    continue
 
-                    # 시트 기존 뉴스와 중복 체크
-                    is_sheet_dup, sim_ratio, matched_title = is_duplicate_in_db(title, existing_titles)
-                    if is_sheet_dup:
-                        print(f"      [시트중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
-                        continue
+                if check_duplicate_in_cache(existing_news_data, normalized_link, title):
+                    continue
 
-                    # 같은 배치 내 수집된 뉴스와 중복 체크 (핵심!)
-                    is_batch_dup, batch_sim, batch_matched = is_duplicate_in_db(title, batch_collected_titles)
-                    if is_batch_dup:
-                        print(f"      [배치중복] {title[:30]}... (유사도 {batch_sim:.0%})")
-                        continue
+                # 시트 기존 뉴스와 중복 체크
+                is_sheet_dup, sim_ratio, matched_title = is_duplicate_in_db(title, existing_titles)
+                if is_sheet_dup:
+                    print(f"      [시트중복] {title[:30]}... (유사도 {sim_ratio:.0%})")
+                    continue
 
-                    # 카테고리별 제외 키워드 체크 (강화된 필터링)
-                    description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                    if is_news_excluded(title, description, category):
-                        print(f"      [제외] {title[:30]}... (카테고리 제외 키워드 매칭)")
-                        continue
+                # 같은 배치 내 수집된 뉴스와 중복 체크
+                is_batch_dup, batch_sim, batch_matched = is_duplicate_in_db(title, batch_collected_titles)
+                if is_batch_dup:
+                    print(f"      [배치중복] {title[:30]}... (유사도 {batch_sim:.0%})")
+                    continue
 
-                    item['_search_keyword'] = keyword
-                    item['_category'] = category
-                    category_collected[category].append(item)
-                    all_news_links.add(normalized_link)
-                    batch_collected_titles.append(title)  # 배치 목록에 추가
-                    print(f"      [신규] {title[:40]}...")
+                # 카테고리별 제외 키워드 체크
+                description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
+                if is_news_excluded(title, description, category):
+                    print(f"      [제외] {title[:30]}... (카테고리 제외 키워드 매칭)")
+                    continue
 
-            time.sleep(0.5)
+                item['_search_keyword'] = keyword
+                item['_category'] = category
+                category_collected[category].append(item)
+                all_news_links.add(normalized_link)
+                batch_collected_titles.append(title)
+                print(f"      [신규] {title[:40]}...")
 
-        # 이번 라운드에서 새로 수집된 뉴스가 없으면 더 검색해도 무의미 → 조기 종료
-        count_after_round = sum(len(v) for v in category_collected.values())
-        if round_num > 0 and count_after_round == count_before_round:
-            print(f"\n[STOP] 라운드 {round_num + 1}에서 새 뉴스 0개 → 추가 검색 중단")
-            break
+            # 이 페이지에서 새 뉴스 0개면 다음 페이지도 의미 없음
+            if len(category_collected[category]) == count_before:
+                print(f"      [SKIP] '{keyword}' 페이지 {page+1}에서 새 뉴스 없음 → 다음 키워드")
+                break
+
+            time.sleep(0.3)
 
     # 카테고리별 수집 결과 출력
     all_news_items = []
