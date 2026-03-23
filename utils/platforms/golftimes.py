@@ -96,6 +96,8 @@ class GolftimesUploader(PlatformUploader):
         for attempt in range(max_retries):
             try:
                 driver = webdriver.Chrome(options=options)
+                driver.set_page_load_timeout(30)
+                driver.set_script_timeout(30)
                 self.wait = WebDriverWait(driver, 10)
                 return driver
 

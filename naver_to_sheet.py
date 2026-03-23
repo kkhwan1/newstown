@@ -549,7 +549,7 @@ def get_naver_news(keyword, display=20, sort='date', config: Optional[NewsCollec
     request.add_header("X-Naver-Client-Secret", client_secret)
     
     try:
-        response = urllib.request.urlopen(request)
+        response = urllib.request.urlopen(request, timeout=10)
         try:
             rescode = response.getcode()
 
