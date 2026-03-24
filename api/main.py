@@ -50,7 +50,7 @@ async def news_schedule_loop():
     while True:
         try:
             cm = get_config_manager()
-            schedule = cm.get("news_schedule")
+            schedule = cm.get("news_schedule") or {}
 
             if not schedule.get("enabled", False):
                 await asyncio.sleep(60)
@@ -83,7 +83,7 @@ async def news_schedule_loop():
                 "sheet_url": cm.get("google_sheet", "url", default=""),
                 "naver_client_id": cm.get("naver_api", "client_id", default=""),
                 "naver_client_secret": cm.get("naver_api", "client_secret", default=""),
-                "category_keywords": cm.get("category_keywords"),
+                "category_keywords": cm.get("category_keywords") or {},
             }
             pm.start_process("news_collection", "scripts/run_news_collection.py", config=config)
             cm.set("news_schedule", "last_run", now.isoformat())
