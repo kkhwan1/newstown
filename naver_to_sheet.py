@@ -2216,86 +2216,13 @@ def main(config: Optional[NewsCollectorConfig] = None):
         
         print(f"[OK] 처리할 뉴스: {len(valid_items)}개 (필터링: {filtered_count}개)")
         
-        # 필터링 후에도 목표 개수보다 적으면 추가 검색
+        # 필터링 후 목표보다 적으면 경고 (1단계 페이지네이션에서 이미 충분히 검색함)
         if len(valid_items) < target_count:
             print(f"[WARN] 목표 개수({target_count}개)보다 적습니다. 현재: {len(valid_items)}개")
-            print(f"   추가 검색을 통해 목표 개수 확보 중...")
-            
-            # 현재까지 수집된 모든 제목 (배치 내 중복 체크용)
-            all_collected_titles = batch_collected_titles + [v['title'] for v in valid_items]
-            
-            # 추가 검색을 통해 목표 개수만큼 확보
-            additional_rounds = 0
-            while len(valid_items) < target_count and additional_rounds < 3:
-                additional_rounds += 1
-                print(f"   추가 검색 라운드 {additional_rounds}...")
-                
-                for keyword, count in config.keywords.items():
-                    if len(valid_items) >= target_count:
-                        break
-
-                    # 더 많은 뉴스 검색
-                    search_count = min(count * 5, 100)
-                    news_result = get_naver_news(keyword, display=search_count, sort=config.sort, config=config)
-                    
-                    if news_result and 'items' in news_result:
-                        for item in news_result['items']:
-                            if len(valid_items) >= target_count:
-                                break
-
-                            # 오늘 뉴스인지 확인
-                            pub_date = item.get('pubDate', '')
-                            if not is_today_news(pub_date):
-                                continue
-
-                            link = item.get('link', '').strip()
-                            title = item.get('title', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-                            description = item.get('description', '').replace("<b>", "").replace("</b>", "").replace("&quot;", "\"").replace("&amp;", "&")
-
-                            # 이미 valid_items에 있는지 확인
-                            if any(v['link'] == link for v in valid_items):
-                                continue
-                            
-                            # 캐시 중복 체크
-                            if check_duplicate_in_cache(existing_news_data, link, title):
-                                continue
-                            
-                            # DB 중복 체크
-                            is_sheet_dup, _, _ = is_duplicate_in_db(title, existing_titles)
-                            if is_sheet_dup:
-                                continue
-                            
-                            # 배치 내 중복 체크
-                            is_batch_dup, _, _ = is_duplicate_in_db(title, all_collected_titles)
-                            if is_batch_dup:
-                                continue
-                            
-                            # 운세 체크
-                            title_lower = title.lower()
-                            desc_lower = description.lower() if description else ""
-                            combined_text = f"{title_lower} {desc_lower}"
-                            fortune_keywords = ["운세", "별자리", "타로", "사주", "점성술"]
-                            if any(kw in combined_text for kw in fortune_keywords):
-                                continue
-                            
-                            # valid_items에 추가
-                            search_keyword = item.get('_search_keyword', keyword)
-                            valid_items.append({
-                                'title': title,
-                                'description': description,
-                                'link': link,
-                                'pubDate': pub_date,
-                                '_search_keyword': search_keyword
-                            })
-                            all_collected_titles.append(title)  # 배치 목록에도 추가
-                
-                if len(valid_items) >= target_count:
-                    break
-                time.sleep(2)
-            
-            # 목표 개수만큼만 선택
+            print(f"   1단계 페이지네이션에서 검색 완료 — 있는 만큼 진행합니다.")
+        else:
             valid_items = valid_items[:target_count]
-            print(f"[OK] 최종 처리할 뉴스: {len(valid_items)}개")
+        print(f"[OK] 최종 처리할 뉴스: {len(valid_items)}개")
         
         if not valid_items:
             print("처리할 새 뉴스가 없습니다.")
