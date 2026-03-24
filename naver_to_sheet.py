@@ -2056,6 +2056,8 @@ def main(config: Optional[NewsCollectorConfig] = None):
             if not news_result or 'items' not in news_result or len(news_result['items']) == 0:
                 break  # 결과 없음 → 다음 키워드로
 
+            today_news_found = 0  # 이 페이지에서 당일 뉴스 개수 추적
+
             for item in news_result['items']:
                 if len(category_collected[category]) >= cat_limit:
                     break
@@ -2066,6 +2068,8 @@ def main(config: Optional[NewsCollectorConfig] = None):
 
                 if not is_today_news(pub_date):
                     continue
+
+                today_news_found += 1  # 당일 뉴스 발견
 
                 normalized_link = normalize_url(link)
                 if normalized_link in all_news_links or link in all_news_links:
@@ -2099,10 +2103,14 @@ def main(config: Optional[NewsCollectorConfig] = None):
                 batch_collected_titles.append(title)
                 print(f"      [신규] {title[:40]}...")
 
-            # 이 페이지에서 새 뉴스 0개면 다음 페이지도 의미 없음
-            if len(category_collected[category]) == count_before:
-                print(f"      [SKIP] '{keyword}' 페이지 {page+1}에서 새 뉴스 없음 → 다음 키워드")
+            # 당일 뉴스가 아예 없으면 다음 페이지도 의미 없음 → SKIP
+            # 당일 뉴스는 있지만 모두 중복이면 → 다음 페이지에서 새 뉴스 가능 → 계속
+            if today_news_found == 0:
+                print(f"      [SKIP] '{keyword}' 페이지 {page+1}에서 당일 뉴스 없음 → 다음 키워드")
                 break
+
+            if len(category_collected[category]) == count_before:
+                print(f"      [NEXT] '{keyword}' 페이지 {page+1}: 당일 뉴스 {today_news_found}건 있으나 모두 중복 → 다음 페이지 시도")
 
             time.sleep(0.3)
 
