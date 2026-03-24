@@ -1830,13 +1830,21 @@ def load_existing_news(sheet):
                     'contents': []
                 }
 
-            # 헤더 행 제외
+            # 오늘 수집분만 중복 체크 대상으로 로드 (당일 뉴스만 수집하므로 어제 이전은 비교 불필요)
+            today_str = datetime.now(KST).strftime('%y%m%d')  # '260324' 형식
             existing_links = set()
             existing_titles = []
             existing_normalized_titles = []
             existing_contents = []
 
+            total_rows = 0
             for row in all_values[1:]:  # 헤더 제외
+                total_rows += 1
+                # E열(인덱스 4)에 오늘 날짜가 포함된 행만 중복 체크 대상
+                pub_date = row[4].strip() if len(row) > 4 else ''
+                if today_str not in pub_date:
+                    continue  # 오늘 수집분이 아니면 스킵
+
                 # 링크 저장 (C열, 인덱스 2) — 정규화 적용
                 if len(row) > 2 and row[2] and row[2].strip():
                     existing_links.add(row[2].strip())
@@ -1851,6 +1859,8 @@ def load_existing_news(sheet):
                     existing_contents.append(content)
 
             print(f"   [OK] 기존 뉴스 {len(existing_links)}개 확인 완료 (링크: {len(existing_links)}개, 제목: {len(existing_titles)}개)")
+            print(f"   [시트] 기존 뉴스 제목 {len(existing_titles)}개 로드 완료 (제목 유사도 체크용)")
+            print(f"   [참고] 시트 전체 {total_rows}행 중 오늘({today_str}) 뉴스만 중복 체크 대상")
             return {
                 'links': existing_links,
                 'titles': existing_titles,
