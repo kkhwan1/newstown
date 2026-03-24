@@ -56,9 +56,9 @@ DASHBOARD_CONFIG_PATH = PROJECT_ROOT / 'config' / 'dashboard_config.json'
 KST = timezone(timedelta(hours=9))
 
 # 중복 판정 임계값 (통합 상수) — 최대 강화
-DEDUP_TITLE_THRESHOLD = 0.20
-DEDUP_KEYWORD_THRESHOLD = 0.25
-DEDUP_CONTENT_THRESHOLD = 0.25
+DEDUP_TITLE_THRESHOLD = 0.45
+DEDUP_KEYWORD_THRESHOLD = 0.50
+DEDUP_CONTENT_THRESHOLD = 0.40
 
 # 네이버 API 일일 호출 한도
 NAVER_API_DAILY_LIMIT = 25000
@@ -1787,12 +1787,12 @@ def is_duplicate_in_db(new_title, db_titles, new_content=None, db_contents=None,
                 if keyword_overlap >= DEDUP_KEYWORD_THRESHOLD:
                     return (True, keyword_overlap, title)
 
-        # 3. 제목 핵심 단어(2글자+) 3개 이상 겹침 → 무조건 중복
+        # 3. 제목 핵심 단어(2글자+) 5개 이상 겹침 → 무조건 중복
         new_core_words = set(w for w in new_normalized.split() if len(w) >= 2)
         existing_core_words = set(w for w in existing_normalized.split() if len(w) >= 2)
         if new_core_words and existing_core_words:
             core_common = new_core_words.intersection(existing_core_words)
-            if len(core_common) >= 3:
+            if len(core_common) >= 5:
                 return (True, len(core_common) / max(len(new_core_words), 1), title)
 
         # 4. 고유명사 기반 같은 주제 체크
@@ -1914,10 +1914,10 @@ def check_duplicate_in_cache(existing_data, link, title=None, content=None):
                 if smaller > 0 and len(common) / smaller >= DEDUP_KEYWORD_THRESHOLD:
                     return True
 
-            # 제목 핵심 단어(2글자+) 3개 이상 겹침 → 무조건 중복
+            # 제목 핵심 단어(2글자+) 5개 이상 겹침 → 무조건 중복
             new_core = set(w for w in normalized_new_title.split() if len(w) >= 2)
             ex_core = set(w for w in normalized_existing_title.split() if len(w) >= 2)
-            if new_core and ex_core and len(new_core.intersection(ex_core)) >= 3:
+            if new_core and ex_core and len(new_core.intersection(ex_core)) >= 5:
                 return True
 
             # 고유명사 기반 같은 주제 체크
