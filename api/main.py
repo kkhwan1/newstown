@@ -72,8 +72,7 @@ async def news_schedule_loop():
 
             # 이미 실행 중이면 스킵
             pm = ProcessManager()
-            status = pm.get_process_status("news_collection")
-            if status and status.get("running"):
+            if pm.is_running("news_collection"):
                 await asyncio.sleep(60)
                 continue
 
