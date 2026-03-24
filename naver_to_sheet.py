@@ -2096,6 +2096,20 @@ def main(config: Optional[NewsCollectorConfig] = None):
                     print(f"      [제외] {title[:30]}... (카테고리 제외 키워드 매칭)")
                     continue
 
+                # 카테고리 관련성 사전 필터: 제목+설명에 카테고리 키워드가 하나도 없으면 스킵
+                cat_kw_data = config.category_keywords.get(category, {})
+                cat_core = cat_kw_data.get('core', [])
+                cat_general = cat_kw_data.get('general', [])
+                title_desc_lower = f"{title} {description}".lower()
+                has_relevance = (
+                    keyword.lower() in title_desc_lower
+                    or any(kw.lower() in title_desc_lower for kw in cat_core)
+                    or any(kw.lower() in title_desc_lower for kw in cat_general)
+                )
+                if not has_relevance:
+                    print(f"      [무관] {title[:30]}... (카테고리 키워드 미포함)")
+                    continue
+
                 item['_search_keyword'] = keyword
                 item['_category'] = category
                 category_collected[category].append(item)
