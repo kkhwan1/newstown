@@ -19,6 +19,7 @@ Features:
 import os
 import sys
 import logging
+import asyncio
 import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -40,6 +41,62 @@ from api.routes import auth, config, process, news, sync, logs, admin, platforms
 from api.dependencies.auth import get_current_user_ws
 
 
+async def news_schedule_loop():
+    """백그라운드 뉴스 수집 스케줄러 — news_schedule.enabled=true 시 interval_hours 간격으로 자동 수집"""
+    from utils.process_manager import ProcessManager
+
+    await asyncio.sleep(10)  # 서버 시작 후 10초 대기
+
+    while True:
+        try:
+            cm = get_config_manager()
+            schedule = cm.get_section("news_schedule")
+
+            if not schedule.get("enabled", False):
+                await asyncio.sleep(60)
+                continue
+
+            interval_sec = schedule.get("interval_hours", 3) * 3600
+            last_run = schedule.get("last_run")
+
+            now = datetime.datetime.now()
+            if last_run:
+                try:
+                    last = datetime.datetime.fromisoformat(last_run)
+                    elapsed = (now - last).total_seconds()
+                    if elapsed < interval_sec:
+                        await asyncio.sleep(60)
+                        continue
+                except (ValueError, TypeError):
+                    pass  # 파싱 실패 시 바로 실행
+
+            # 이미 실행 중이면 스킵
+            pm = ProcessManager()
+            status = pm.get_process_status("news_collection")
+            if status and status.get("running"):
+                await asyncio.sleep(60)
+                continue
+
+            # 수집 시작
+            news_config = cm.get_section("news_collection")
+            config = {
+                **(news_config if isinstance(news_config, dict) else {}),
+                "sheet_url": cm.get("google_sheet", "url", default=""),
+                "naver_client_id": cm.get("naver_api", "client_id", default=""),
+                "naver_client_secret": cm.get("naver_api", "client_secret", default=""),
+                "category_keywords": cm.get_section("category_keywords"),
+            }
+            pm.start_process("news_collection", "scripts/run_news_collection.py", config=config)
+            cm.set("news_schedule", "last_run", now.isoformat())
+            logger.info(f"[스케줄러] 뉴스 수집 자동 시작 (다음: {schedule.get('interval_hours', 3)}시간 후)")
+
+            await asyncio.sleep(60)
+
+        except Exception as e:
+            logger.error(f"[스케줄러] 오류: {e}")
+            await asyncio.sleep(300)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
@@ -48,9 +105,14 @@ async def lifespan(app: FastAPI):
     get_config_manager()
     logger.info("Configuration loaded")
 
+    # 뉴스 수집 자동 스케줄러 시작
+    scheduler_task = asyncio.create_task(news_schedule_loop())
+    logger.info("News schedule loop started")
+
     yield
 
     # Shutdown: Cleanup
+    scheduler_task.cancel()
     logger.info("Shutting down FastAPI server...")
 
 
